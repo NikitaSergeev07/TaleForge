@@ -1,0 +1,27 @@
+# env / secrets
+.env
+
+# runtime artifacts
+traces/
+saves/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# sqlite / save dbs
+*.sqlite
+*.sqlite3
+*.db
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
