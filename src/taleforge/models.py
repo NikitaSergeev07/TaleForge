@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializeAsAny
 
 
 class Entity(BaseModel):
@@ -73,8 +73,10 @@ class WorldState(BaseModel):
     session_id: str
     turn: int = 0
     player_id: str
-    # See module docstring re: `dict[str, Entity | NPC]` typing.
-    entities: dict[str, Entity] = Field(default_factory=dict)
+    # See module docstring re: `dict[str, Entity | NPC]` typing. SerializeAsAny is
+    # the pydantic v2 escape hatch that makes subclass-specific fields (NPC.goals,
+    # secrets, disposition, memory) survive ``model_dump_json``.
+    entities: dict[str, SerializeAsAny[Entity]] = Field(default_factory=dict)
     locations: dict[str, Location] = Field(default_factory=dict)
     quests: dict[str, Quest] = Field(default_factory=dict)
     in_game_time: dict[str, int] = Field(

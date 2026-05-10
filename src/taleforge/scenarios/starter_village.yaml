@@ -1,0 +1,137 @@
+# Brackenhollow — the starter village scenario.
+#
+# Encoding rules used by the loader (state/store.py::load_scenario_yaml):
+# - `kind: npc` entries are constructed as NPC (carry goals, secrets, etc.)
+# - inventory entries can be plain strings or {item, count} for stackables (gp).
+
+session_id: brackenhollow
+player_id: pc
+in_game_time: { day: 1, hour: 8 }
+rng_seed: 1138
+
+locations:
+  - id: village_square
+    name: Village Square
+    description: >-
+      The cobbled heart of Brackenhollow: a chipped well, a notice board fluttering
+      with handbills, and the smell of wood-smoke rolling in from the smithy.
+    exits:
+      north: tavern
+      east: smithy
+      west: edge_of_woods
+    present_entity_ids: [pc, tibor]
+
+  - id: tavern
+    name: The Boar & Barrel
+    description: >-
+      Low-beamed and warm. A peat fire mutters; copper pots gleam over the bar.
+    exits: { south: village_square }
+    present_entity_ids: [maren]
+
+  - id: smithy
+    name: Hask's Smithy
+    description: >-
+      Soot-blackened, the bellows wheezing. A signboard reads "ROAN, ELDER, INSIDE".
+    exits: { west: village_square }
+    present_entity_ids: [elder_roan]
+
+  - id: edge_of_woods
+    name: Edge of the Howling Woods
+    description: >-
+      The road thins to a footpath swallowed by black pines. Wolf-prints in the mud.
+    exits:
+      east: village_square
+      west: deep_woods
+    present_entity_ids: []
+
+  - id: deep_woods
+    name: Deep Woods
+    description: >-
+      The canopy closes overhead. Light fails ten yards in; somewhere, a branch snaps.
+    exits:
+      east: edge_of_woods
+      north: wolf_den
+    present_entity_ids: []
+
+  - id: wolf_den
+    name: Wolf Den
+    description: >-
+      A ribcage of fallen trunks. The reek of damp fur and old kills.
+    exits: { south: deep_woods }
+    present_entity_ids: [dire_wolf]
+
+entities:
+  - id: pc
+    name: You
+    kind: player
+    hp: 18
+    max_hp: 18
+    location_id: village_square
+    inventory:
+      - shortsword
+      - { item: gp, count: 10 }
+    attrs: { str: 14, dex: 12, con: 13, int: 10, wis: 11, cha: 12 }
+
+  - id: maren
+    name: Maren the Innkeeper
+    kind: npc
+    hp: 10
+    max_hp: 10
+    location_id: tavern
+    inventory: []
+    attrs: { str: 10, dex: 10, con: 10, int: 11, wis: 12, cha: 14 }
+    goals:
+      - keep the tavern profitable
+      - look after travelers
+    secrets:
+      - she waters down the ale to stretch the barrel
+    disposition: 20
+    memory: []
+
+  - id: elder_roan
+    name: Elder Roan
+    kind: npc
+    hp: 8
+    max_hp: 8
+    location_id: smithy
+    inventory: []
+    attrs: { str: 9, dex: 9, con: 10, int: 13, wis: 14, cha: 13 }
+    goals:
+      - protect Brackenhollow from the wolves
+    secrets:
+      - she knows the dire wolf is rabid, not magical
+      - she withholds that fact to keep the bounty low
+    disposition: 5
+    memory: []
+
+  - id: tibor
+    name: Tibor the Bard
+    kind: npc
+    hp: 8
+    max_hp: 8
+    location_id: village_square
+    inventory: [lute, dagger]
+    attrs: { str: 8, dex: 13, con: 10, int: 12, wis: 10, cha: 16 }
+    goals:
+      - join the player's adventure for glory
+    secrets:
+      - he cannot actually fight; the duels in his songs are invented
+    disposition: 30
+    memory: []
+
+  - id: dire_wolf
+    name: Dire Wolf
+    kind: creature
+    hp: 22
+    max_hp: 22
+    location_id: wolf_den
+    inventory: []
+    attrs: { str: 17, dex: 15, con: 15, int: 3, wis: 12, cha: 7 }
+
+quests:
+  - id: howling_woods
+    title: The Howling Woods
+    state: active
+    objectives:
+      - { id: defeat_wolf, description: "Kill or drive off the dire wolf in the Howling Woods", done: false }
+      - { id: claim_bounty, description: "Return to Elder Roan for the 50gp bounty", done: false }
