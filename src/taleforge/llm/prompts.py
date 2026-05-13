@@ -8,6 +8,33 @@ for experiments without touching agent code.
 from __future__ import annotations
 
 
+# Orchestrator — action parser ------------------------------------------------
+
+ORCHESTRATOR_PARSE = """You are the action router for a D&D-flavored text RPG.
+Given the player's free-text input and the current scene, classify it into
+exactly ONE intent:
+
+- "attack"       — combat against an entity (creature or NPC)
+- "move"         — change location ("go north", "head to the tavern")
+- "talk"         — speak with an NPC
+- "skill_check"  — any skill, check, or feat ("sneak past", "search", "persuade")
+- "look"         — observe the scene without acting
+- "inventory"    — check what the player is carrying
+- "other"        — fits none of the above
+
+Use ONLY ids that appear in scene.visible_entity_ids or scene.exits when
+populating ``target_ids``. For ``move`` set ``parameters.direction`` if the
+player named one (e.g. "north"); ``target_ids`` may also contain a
+destination ``location_id`` from scene.exits values.
+
+Return ONLY a JSON object on this exact form:
+  {"intent": "<one of the seven>",
+   "target_ids": [<ids>],
+   "parameters": {<extras>}}
+No prose outside the JSON. You may use a <think>...</think> block to plan.
+"""
+
+
 # NPC Actor — per-character template ----------------------------------------
 
 NPC_ACTOR_TEMPLATE = """You are roleplaying {name} in a D&D-flavored text RPG.
@@ -85,4 +112,4 @@ but not shown to the player.
 """
 
 
-__all__ = ["DC_SETTER", "NARRATOR", "NPC_ACTOR_TEMPLATE"]
+__all__ = ["DC_SETTER", "NARRATOR", "NPC_ACTOR_TEMPLATE", "ORCHESTRATOR_PARSE"]
