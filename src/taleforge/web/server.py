@@ -58,6 +58,7 @@ class SessionEntry:
     keeper: WorldStateKeeper
     orchestrator: Orchestrator
     cumulative_cost_usd: float = 0.0
+    language: str = "en"
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -211,8 +212,12 @@ async def create_session(req: CreateSessionRequest) -> CreateSessionResponse:
     )
     keeper.save()
     assert STATE.client is not None
-    orch = Orchestrator(STATE.client, keeper, settings=STATE.settings)
-    STATE.sessions[sid] = SessionEntry(keeper=keeper, orchestrator=orch)
+    orch = Orchestrator(
+        STATE.client, keeper, settings=STATE.settings, language=req.language
+    )
+    STATE.sessions[sid] = SessionEntry(
+        keeper=keeper, orchestrator=orch, language=req.language
+    )
     return CreateSessionResponse(session_id=sid, db_path=str(db))
 
 
@@ -260,7 +265,9 @@ async def get_npcs(sid: str) -> list[NpcCardDTO]:
 async def post_turn(sid: str, req: TurnRequest) -> TurnResultDTO:
     entry = _get_session(sid)
     async with entry.lock:
-        result = await entry.orchestrator.take_turn(req.input)
+        result = await entry.orchestrator.take_turn(
+            req.input, language=req.language or entry.language
+        )
         entry.cumulative_cost_usd += result.turn_cost_usd
         entry.keeper.save()
     return TurnResultDTO(

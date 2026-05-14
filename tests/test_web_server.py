@@ -165,3 +165,49 @@ def test_create_session_conflict_on_duplicate(client):
 def test_get_scene_404_for_unknown_session(client):
     r = client.get("/api/sessions/no-such/scene")
     assert r.status_code == 404
+
+
+def test_session_language_propagates_to_narrator_system_prompt(tmp_path, monkeypatch):
+    """Create a session with language=ru, take a turn, verify the captured
+    narrator request contains the Russian language hint."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("MINIMAX_API_KEY", "test-key")
+    captured: dict = {"prompts": []}
+
+    from taleforge.llm import minimax as minimax_mod
+
+    def recording_handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.read())
+        sys = body["messages"][0]["content"]
+        captured["prompts"].append(sys)
+        if "action router" in sys.lower():
+            return httpx.Response(200, json=_wrap(json.dumps({
+                "intent": "look", "target_ids": [], "parameters": {}
+            })))
+        if "narrator" in sys.lower():
+            return httpx.Response(200, json=_wrap("Площадь тиха."))
+        return httpx.Response(200, json=_wrap("ok"))
+
+    real_init = minimax_mod.MinimaxClient.__init__
+
+    def patched_init(self, settings=None, *, transport=None):
+        real_init(self, settings, transport=httpx.MockTransport(recording_handler))
+
+    monkeypatch.setattr(minimax_mod.MinimaxClient, "__init__", patched_init)
+
+    import importlib
+
+    from taleforge.web import server as srv
+
+    importlib.reload(srv)
+    with TestClient(srv.app) as c:
+        r1 = c.post("/api/sessions", json={"session_id": "ru1", "language": "ru"})
+        assert r1.status_code == 200, r1.text
+        r = c.post("/api/sessions/ru1/turn", json={"input": "осмотрись"})
+        assert r.status_code == 200, r.text
+        assert r.json()["prose"] == "Площадь тиха."
+
+    narrator_prompts = [p for p in captured["prompts"] if "narrator" in p.lower()]
+    assert narrator_prompts, "narrator was never called"
+    assert any("Russian" in p for p in narrator_prompts), \
+        "language hint did not reach the narrator system prompt"

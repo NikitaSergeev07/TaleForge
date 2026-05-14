@@ -1,5 +1,7 @@
 import type { NpcCard, Scene } from "../types";
 import { api } from "../api";
+import { useI18n } from "../i18n";
+import type { StringKey } from "../i18n/strings";
 
 interface Props {
   npcs: NpcCard[];
@@ -16,13 +18,14 @@ const HP_COLOR: Record<string, string> = {
 };
 
 function DispositionBar({ norm, label }: { norm: number; label: string }) {
-  // norm in [-1, 1]; map to bar width with center.
+  const { t } = useI18n();
   const pct = Math.round(((norm + 1) / 2) * 100);
   const color = norm >= 0.4 ? "bg-forest" : norm >= -0.1 ? "bg-yellow-600" : "bg-ember";
+  const localized = t(`disposition.${label}` as StringKey);
   return (
     <div>
       <div className="flex justify-between text-[10px] font-mono text-parchment/50 mb-0.5">
-        <span>{label}</span>
+        <span>{localized}</span>
         <span>{Math.round(norm * 100)}</span>
       </div>
       <div className="h-1.5 rounded-full bg-parchment/10 overflow-hidden">
@@ -33,7 +36,7 @@ function DispositionBar({ norm, label }: { norm: number; label: string }) {
 }
 
 export function NpcPanel({ npcs, scene }: Props) {
-  // Visible NPCs first (co-located with player), then others by location.
+  const { t } = useI18n();
   const here = new Set(scene?.entities.map(e => e.id) ?? []);
   const sorted = [...npcs].sort((a, b) => {
     const ah = here.has(a.id) ? 0 : 1;
@@ -45,6 +48,7 @@ export function NpcPanel({ npcs, scene }: Props) {
     <div className="space-y-3">
       {sorted.map((n) => {
         const isHere = here.has(n.id);
+        const hpKey = `hp.${n.hp_label}` as StringKey;
         return (
           <div key={n.id}
             className={`p-3 rounded-lg border transition-all ${
@@ -59,13 +63,15 @@ export function NpcPanel({ npcs, scene }: Props) {
                 <div className="flex items-baseline justify-between">
                   <div className="font-serif text-parchment text-base truncate">{n.name}</div>
                   {isHere && (
-                    <span className="text-[10px] font-mono text-ember/90 ml-2 uppercase tracking-wider">here</span>
+                    <span className="text-[10px] font-mono text-ember/90 ml-2 uppercase tracking-wider">
+                      {t("npc.here")}
+                    </span>
                   )}
                 </div>
                 <div className="text-xs text-parchment/50 mt-0.5">
                   <span className={`inline-block w-2 h-2 rounded-full ${HP_COLOR[n.hp_label] ?? "bg-steel"} mr-1.5 align-middle`} />
-                  {n.hp_label}
-                  {n.has_interacted && <span className="ml-2 text-parchment/30">· remembers you</span>}
+                  {t(hpKey)}
+                  {n.has_interacted && <span className="ml-2 text-parchment/30">· {t("npc.remembersYou")}</span>}
                 </div>
                 <div className="mt-2">
                   <DispositionBar norm={n.disposition_norm} label={n.disposition_label} />

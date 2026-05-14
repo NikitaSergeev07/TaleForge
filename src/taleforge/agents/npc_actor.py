@@ -28,7 +28,7 @@ from typing import Any
 
 from ..config import Settings
 from ..llm.minimax import MinimaxClient, strip_think_blocks
-from ..llm.prompts import NPC_ACTOR_TEMPLATE
+from ..llm.prompts import NPC_ACTOR_TEMPLATE, language_suffix
 from ..models import NPC
 from .base import BaseAgent
 
@@ -146,14 +146,18 @@ class NPCActor(BaseAgent):
         *,
         temperature: float = 0.8,
         max_tokens: int = 350,
+        language: str = "en",
     ) -> NPCResponse:
         """Have ``npc`` respond to ``player_utterance``.
 
         Builds the per-NPC system prompt fresh from the current NPC fields, so
         any memory/disposition mutations the keeper applied between turns are
-        reflected automatically.
+        reflected automatically. ``language`` ("en", "ru", …) is appended to
+        the system prompt — only the ``reply`` field is asked to be in that
+        language; the JSON shape and ``remember`` stay English-keyed for the
+        keeper.
         """
-        sys_prompt = build_npc_system_prompt(npc, scene_context)
+        sys_prompt = build_npc_system_prompt(npc, scene_context) + language_suffix(language, reply_only=True)
         messages = [
             {"role": "system", "content": sys_prompt},
             *self._history,

@@ -18,11 +18,13 @@ class CreateSessionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     scenario: str = "starter_village"
     session_id: str | None = None
+    language: str = "en"  # narrator/NPC reply language; "en", "ru", …
 
 
 class TurnRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     input: str
+    language: str | None = None  # overrides session default if set
 
 
 # ── scene / map / npc ───────────────────────────────────────────────────

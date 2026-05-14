@@ -221,6 +221,36 @@ async def test_narrate_payload_is_leak_free_against_real_npcs():
 
 
 @pytest.mark.asyncio
+async def test_narrate_with_language_hint_appends_russian_to_system_prompt():
+    captured: dict = {}
+    transport = _capturing_handler(captured, content="Площадь тиха.")
+    async with MinimaxClient(_settings(), transport=transport) as client:
+        narrator = Narrator(client)
+        state = _state()
+        outcome = Outcome(success=True, public_facts=["You step into the square."])
+        prose = await narrator.narrate(state, outcome, language="ru")
+        body = json.loads(captured["body"])
+        sys_prompt = body["messages"][0]["content"]
+        assert "Russian" in sys_prompt
+        assert prose == "Площадь тиха."
+
+
+@pytest.mark.asyncio
+async def test_narrate_with_default_language_omits_hint():
+    captured: dict = {}
+    transport = _capturing_handler(captured, content="Quiet square.")
+    async with MinimaxClient(_settings(), transport=transport) as client:
+        narrator = Narrator(client)
+        state = _state()
+        await narrator.narrate(state, Outcome(success=True, public_facts=["x"]))
+        body = json.loads(captured["body"])
+        sys_prompt = body["messages"][0]["content"]
+        # No language hint when language defaults to English.
+        assert "Russian" not in sys_prompt
+        assert "IMPORTANT: Write your output" not in sys_prompt
+
+
+@pytest.mark.asyncio
 async def test_narrate_history_window_caps_at_max_history():
     captured: dict = {}
     transport = _capturing_handler(captured, content="line")

@@ -22,7 +22,7 @@ from typing import Any
 
 from ..config import Settings
 from ..llm.minimax import MinimaxClient
-from ..llm.prompts import NARRATOR
+from ..llm.prompts import NARRATOR, language_suffix
 from ..models import Entity, Outcome, WorldState
 from .base import BaseAgent
 
@@ -109,17 +109,21 @@ class Narrator(BaseAgent):
         max_history: int = 3,
         temperature: float = 0.85,
         max_tokens: int = 400,
+        language: str = "en",
     ) -> str:
         """Generate prose for ``outcome`` in the current scene.
 
         Returns the visible prose (with ``<think>`` blocks stripped) and
         appends it to ``prose_history`` for continuity on the next turn.
+        ``language`` (e.g. "en", "ru") is appended to the system prompt as a
+        target-language hint; scene data stays English (proper nouns).
         """
         scene = self._build_visible_scene(state)
         view = self._build_view(scene, outcome, self._prose_history[-max_history:])
+        system = NARRATOR + language_suffix(language)
         result = await self.client.chat(
             [
-                {"role": "system", "content": NARRATOR},
+                {"role": "system", "content": system},
                 {"role": "user", "content": json.dumps(view)},
             ],
             model=self.model,

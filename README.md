@@ -340,6 +340,32 @@ The whole orchestrator is one file you can read in five minutes:
 
 ---
 
+## Internationalisation
+
+The web UI is bilingual out of the box (English + Russian) with the
+language switcher in the header. The choice is persisted in
+`localStorage` and detected from `navigator.language` on first visit.
+
+Backend support: `POST /api/sessions` accepts a `language: "en" | "ru"`
+field; `POST /api/sessions/{sid}/turn` can override it per-turn. The
+language flows through `Orchestrator.take_turn` → `Narrator.narrate` and
+`NPCActor.speak`, where a one-line hint is appended to the system prompt
+asking the model to write its output in the chosen language.
+
+The scenario YAML stays in English (proper nouns like Brackenhollow,
+Maren, "The Boar & Barrel" — translation would be lossy). The Narrator
+transliterates them on the fly (`Брекенхоллоу`, `Тибор Бард`, etc.).
+
+Verified end-to-end against `claude-opus-4-7` via gngn.my: `look around`
+in Russian → 280-character atmospheric paragraph in Russian, $0.13 / turn
+(slightly more than English because the model reasons more on RU output).
+
+Adding a new language is one file — drop strings into
+`frontend/src/i18n/strings.ts` (each key has an `{en, ru, …}` object) and
+`_LANG_NAMES` in `src/taleforge/llm/prompts.py`.
+
+---
+
 ## Web frontend — invariants
 
 The web layer carries the same no-leak rules as the Narrator. Three

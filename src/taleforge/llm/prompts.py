@@ -8,6 +8,43 @@ for experiments without touching agent code.
 from __future__ import annotations
 
 
+# ── language hint helper ─────────────────────────────────────────────────
+
+
+_LANG_NAMES: dict[str, str] = {
+    "en": "English",
+    "ru": "Russian",
+    "es": "Spanish",
+    "de": "German",
+    "fr": "French",
+    "uk": "Ukrainian",
+    "pl": "Polish",
+    "zh": "Chinese",
+    "ja": "Japanese",
+}
+
+
+def language_suffix(language: str, *, reply_only: bool = False) -> str:
+    """Build a one-line system-prompt suffix asking the model to write in a
+    given language. Returns ``""`` for English (no-op).
+
+    ``reply_only=True`` is for the NPCActor: the JSON shape stays English (so
+    the keeper can parse it), only the ``reply`` field text is translated.
+    """
+    if language == "en" or not language:
+        return ""
+    name = _LANG_NAMES.get(language, language)
+    if reply_only:
+        return (
+            f"\n\nIMPORTANT: Write the value of the JSON field \"reply\" in "
+            f"{name}. Keep the JSON keys and other fields' values in English."
+        )
+    return f"\n\nIMPORTANT: Write your output in {name}."
+
+
+
+
+
 # Orchestrator — action parser ------------------------------------------------
 
 ORCHESTRATOR_PARSE = """You are the action router for a D&D-flavored text RPG.
@@ -112,4 +149,10 @@ but not shown to the player.
 """
 
 
-__all__ = ["DC_SETTER", "NARRATOR", "NPC_ACTOR_TEMPLATE", "ORCHESTRATOR_PARSE"]
+__all__ = [
+    "DC_SETTER",
+    "NARRATOR",
+    "NPC_ACTOR_TEMPLATE",
+    "ORCHESTRATOR_PARSE",
+    "language_suffix",
+]

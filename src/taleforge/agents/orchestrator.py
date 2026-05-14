@@ -65,20 +65,23 @@ class Orchestrator(BaseAgent):
         rules_lawyer: RulesLawyer | None = None,
         npc_director: NPCDirector | None = None,
         settings: Settings | None = None,
+        language: str = "en",
     ) -> None:
         super().__init__(client, settings=settings)
         self.model = self.settings.model_fast
         self.keeper = keeper
+        self.language = language  # propagated to Narrator + NPCActor as a hint
         self.narrator = narrator or Narrator(client, settings=self.settings)
         self.lawyer = rules_lawyer or RulesLawyer(client, settings=self.settings)
         self.director = npc_director or NPCDirector(client, settings=self.settings)
 
     # ── public ──────────────────────────────────────────────────────
 
-    async def take_turn(self, raw_input: str) -> TurnResult:
+    async def take_turn(self, raw_input: str, *, language: str | None = None) -> TurnResult:
+        lang = language or self.language
         cost_before = self.client.total_cost_usd
         action = await self.parse_action(raw_input, self.keeper.state)
-        outcome = await self._route(action)
+        outcome = await self._route(action, language=lang)
 
         applied: list[tuple[dict, list[str]]] = []
         rejected: list[tuple[dict, str]] = []
@@ -89,7 +92,7 @@ class Orchestrator(BaseAgent):
         if action.intent == "inventory":
             prose = self._render_inventory()
         else:
-            prose = await self.narrator.narrate(self.keeper.state, outcome)
+            prose = await self.narrator.narrate(self.keeper.state, outcome, language=lang)
 
         self.keeper.advance_turn()
         result = TurnResult(
@@ -136,7 +139,7 @@ class Orchestrator(BaseAgent):
 
     # ── routing ────────────────────────────────────────────────────
 
-    async def _route(self, action: Action) -> Outcome:
+    async def _route(self, action: Action, *, language: str = "en") -> Outcome:
         state = self.keeper.state
         intent = action.intent
 
@@ -145,7 +148,7 @@ class Orchestrator(BaseAgent):
         if intent == "skill_check":
             return await self.lawyer.resolve_skill_check(state, action)
         if intent == "talk":
-            return await self.director.talk(state, action)
+            return await self.director.talk(state, action, language=language)
         if intent == "move":
             return self._handle_move(action)
         if intent == "look":

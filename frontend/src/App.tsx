@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
-import type { NpcCard, Roll, Scene, SessionSummary, TurnResult, WorldMap } from "./types";
+import type { NpcCard, Roll, Scene, TurnResult, WorldMap } from "./types";
+import { useI18n } from "./i18n";
 import { Header } from "./components/Header";
 import { ProseFeed } from "./components/ProseFeed";
 import { ActionInput } from "./components/ActionInput";
@@ -11,6 +12,7 @@ import { DiceFooter } from "./components/DiceFooter";
 import { CombatOverlay } from "./components/CombatOverlay";
 
 export default function App() {
+  const { lang, t } = useI18n();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
   const [map, setMap] = useState<WorldMap | null>(null);
@@ -20,20 +22,21 @@ export default function App() {
   const [combat, setCombat] = useState<{ intent: string; rolls: Roll[]; targetId?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Boot: pick latest session or create one.
+  // Boot: pick latest session or create one in the player's current language.
   useEffect(() => {
     (async () => {
       try {
         const sessions = await api.listSessions();
         const sid = sessions.length
           ? sessions[sessions.length - 1].session_id
-          : (await api.createSession("starter_village")).session_id;
+          : (await api.createSession("starter_village", undefined, lang)).session_id;
         setSessionId(sid);
       } catch (e: any) { setError(e.message); }
     })();
+    // intentionally only on mount; switching lang afterward only affects new sessions + future turns.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh derived views when session changes.
   useEffect(() => {
     if (!sessionId) return;
     refreshViews(sessionId);
@@ -51,7 +54,8 @@ export default function App() {
     setPending(input);
     setError(null);
     try {
-      const result = await api.takeTurn(sessionId, input);
+      // Pass lang on every turn so a mid-session language switch takes effect immediately.
+      const result = await api.takeTurn(sessionId, input, lang);
       setHistory(h => [...h, result]);
       await refreshViews(sessionId);
       if (result.intent === "attack" && result.rolls.length > 0) {
@@ -67,7 +71,7 @@ export default function App() {
 
   async function newSession() {
     try {
-      const r = await api.createSession("starter_village");
+      const r = await api.createSession("starter_village", undefined, lang);
       setSessionId(r.session_id);
       setHistory([]); setCombat(null);
     } catch (e: any) { setError(e.message); }
@@ -99,25 +103,23 @@ export default function App() {
 
       {error && (
         <div className="px-8 py-2 text-sm font-mono bg-ember/30 text-parchment border-b border-ember/50">
-          {error}  <button onClick={() => setError(null)} className="underline ml-2">dismiss</button>
+          {error}  <button onClick={() => setError(null)} className="underline ml-2">{t("error.dismiss")}</button>
         </div>
       )}
 
       <div className="flex-1 grid grid-cols-12 min-h-0 overflow-hidden">
-        {/* Left: world map + new session */}
         <aside className="col-span-3 border-r border-parchment/10 bg-black/20 p-5 overflow-y-auto space-y-5">
           <div>
-            <div className="text-xs font-mono uppercase tracking-widest text-parchment/40 mb-2">world map</div>
+            <div className="text-xs font-mono uppercase tracking-widest text-parchment/40 mb-2">{t("panel.worldMap")}</div>
             <WorldMapView map={map} />
           </div>
           <button onClick={newSession}
             className="w-full px-3 py-2 text-xs font-mono border border-parchment/20 rounded
                        hover:bg-parchment/10 transition">
-            + new session
+            {t("header.newSession")}
           </button>
         </aside>
 
-        {/* Center: prose feed + input */}
         <main className="col-span-6 flex flex-col min-h-0 bg-gradient-to-b from-ink to-black">
           <ProseFeed
             history={history}
@@ -128,14 +130,13 @@ export default function App() {
           <ActionInput disabled={!!pending || !sessionId} onSubmit={takeTurn} />
         </main>
 
-        {/* Right: NPCs + inventory */}
         <aside className="col-span-3 border-l border-parchment/10 bg-black/20 p-5 overflow-y-auto space-y-5">
           <div>
-            <div className="text-xs font-mono uppercase tracking-widest text-parchment/40 mb-2">npcs</div>
+            <div className="text-xs font-mono uppercase tracking-widest text-parchment/40 mb-2">{t("panel.npcs")}</div>
             <NpcPanel npcs={npcs} scene={scene} />
           </div>
           <div>
-            <div className="text-xs font-mono uppercase tracking-widest text-parchment/40 mb-2">player</div>
+            <div className="text-xs font-mono uppercase tracking-widest text-parchment/40 mb-2">{t("panel.player")}</div>
             <InventoryPanel player={scene?.player ?? null} />
           </div>
         </aside>

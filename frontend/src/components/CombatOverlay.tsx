@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from "framer-motion";
 import type { Roll, Scene } from "../types";
+import { useI18n } from "../i18n";
 
 interface Props {
   active: { intent: string; rolls: Roll[]; targetId?: string } | null;
@@ -8,10 +9,19 @@ interface Props {
 }
 
 export function CombatOverlay({ active, scene, onDismiss }: Props) {
+  const { t } = useI18n();
   const show = !!active && active.intent === "attack" && active.rolls.length > 0;
   const damage = active?.rolls.find(r => r.kind === "damage");
   const attack = active?.rolls.find(r => r.kind === "attack");
   const target = scene?.entities.find(e => e.id === active?.targetId);
+
+  const verdict = attack?.crit
+    ? t("combat.crit")
+    : attack?.fumble
+      ? t("combat.fumble")
+      : attack?.success
+        ? t("combat.hit")
+        : t("combat.miss");
 
   return (
     <AnimatePresence>
@@ -27,7 +37,7 @@ export function CombatOverlay({ active, scene, onDismiss }: Props) {
             className="bg-ink/95 border-2 border-ember/50 rounded-2xl p-8 max-w-md shadow-2xl shadow-ember/20">
             <div className="text-center space-y-3">
               <div className="text-xs font-mono uppercase tracking-widest text-ember/80">
-                {attack?.crit ? "critical strike" : attack?.fumble ? "fumble" : attack?.success ? "hit" : "miss"}
+                {verdict}
               </div>
               <div className="font-serif text-2xl text-parchment">
                 {attack?.weapon ?? "attack"} → {target?.name ?? "target"}
@@ -48,7 +58,7 @@ export function CombatOverlay({ active, scene, onDismiss }: Props) {
               )}
               <button onClick={onDismiss}
                 className="mt-4 text-xs font-mono text-parchment/40 hover:text-parchment transition">
-                press any key to continue
+                {t("combat.dismiss")}
               </button>
             </div>
           </motion.div>

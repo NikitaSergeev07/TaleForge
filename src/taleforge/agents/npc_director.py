@@ -61,6 +61,7 @@ class NPCDirector(BaseAgent):
         action: Action,
         *,
         target_npc_id: str | None = None,
+        language: str = "en",
     ) -> Outcome:
         """Resolve a ``talk`` action; return Outcome for the keeper + narrator."""
         npc_id = target_npc_id or self._pick_target(state, action)
@@ -80,7 +81,7 @@ class NPCDirector(BaseAgent):
         scene_ctx = self._scene_for(state, npc)
         actor = self.get_actor(npc_id)
         try:
-            resp = await actor.speak(npc, action.raw, scene_ctx)
+            resp = await actor.speak(npc, action.raw, scene_ctx, language=language)
         except NPCParseError as e:
             return Outcome(
                 success=False,

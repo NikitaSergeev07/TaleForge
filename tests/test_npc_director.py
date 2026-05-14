@@ -279,6 +279,27 @@ async def test_director_caches_actor_so_npc_history_persists_across_turns():
         assert set(director.actors.keys()) == {"maren"}
 
 
+# ── language hint reaches the NPCActor system prompt ──────────────
+
+
+@pytest.mark.asyncio
+async def test_director_propagates_language_to_actor_system_prompt():
+    captured: dict = {}
+    transport = _payload_handler(captured, {
+        "reply": "Aye.", "remember": "", "disposition_delta": 0, "revealed_secret": False,
+    })
+    async with MinimaxClient(_settings(), transport=transport) as client:
+        director = NPCDirector(client)
+        state = _state()
+        action = Action(raw="привет", intent="talk", target_ids=["tibor"])
+        await director.talk(state, action, language="ru")
+
+        sys_msg = captured["bodies"][0]["messages"][0]["content"]
+        # The reply-only Russian hint should appear; English JSON keys preserved.
+        assert "Russian" in sys_msg
+        assert "reply" in sys_msg  # JSON shape unchanged
+
+
 # ── end-to-end: memory mutation lands on the right NPC ─────────────
 
 
