@@ -70,7 +70,7 @@ flowchart TD
 ## Quickstart
 
 ```bash
-# 1. Install
+# 1. Install Python side
 git clone <this-repo> taleforge && cd taleforge
 pip install -e ".[dev]"     # uv sync also works
 
@@ -79,15 +79,22 @@ cp .env.example .env
 # edit .env: paste your gngn.my gateway token (Anthropic-style sk-ant-…)
 
 # 3. Verify
-pytest                       # 74 tests, ~6s
+pytest                       # 83 tests, ~10s
 
-# 4. Play
+# 4a. Play in the terminal
 taleforge new --scenario starter_village
 # prints a session id, e.g. starter_village-1715639500
 taleforge play starter_village-1715639500
+
+# 4b. OR play in the web UI
+# terminal A — backend:
+uvicorn taleforge.web.server:app --port 8000
+# terminal B — frontend:
+cd frontend && npm install && npm run dev
+# open http://localhost:5173
 ```
 
-In the play loop:
+In the **CLI** play loop:
 
 ```
 > look around
@@ -99,6 +106,11 @@ In the play loop:
 
 Slash commands (handled locally, no LLM):
 `/save` `/quit` `/state` `/inv` `/undo` `/rolls` `/help`.
+
+In the **web UI**: type free-text actions in the centre, click suggestion chips,
+watch the world map highlight your current location, hover NPC cards on the
+right to see disposition / HP / "remembers you" flags, and get a combat
+overlay on every attack roll.
 
 ---
 
@@ -277,7 +289,25 @@ src/taleforge/
 │   ├── npc_director.py     # routes to per-NPC sub-agents (no character-play)
 │   └── npc_actor.py        # ONE NPC, own prompt + own history
 ├── bench/consistency.py    # 30-turn script + 10 fact questions + scoring
-└── cli.py                  # typer entrypoint: new / play / load / bench
+├── cli.py                  # typer entrypoint: new / play / load / bench
+└── web/
+    ├── server.py           # FastAPI: sessions, scene, turn, undo, world-map, npcs, portraits
+    └── schemas.py          # DTOs (filtered: NO secrets / goals / raw memory leak through)
+
+frontend/                   # React 18 + Vite 4 + Tailwind 3 + framer-motion
+├── src/
+│   ├── App.tsx             # 3-pane layout (map / prose / npcs+inventory)
+│   ├── api.ts              # fetch wrappers for /api/*
+│   ├── types.ts            # mirrors web/schemas.py
+│   └── components/
+│       ├── Header.tsx          # turn / day / cost / undo / save
+│       ├── ProseFeed.tsx       # scrolling narrator history with framer transitions
+│       ├── ActionInput.tsx     # input box + suggestion chips
+│       ├── WorldMap.tsx        # SVG graph; current location pulses with ember glow
+│       ├── NpcPanel.tsx        # cards: portrait / hp / disposition bar / "here" badge
+│       ├── InventoryPanel.tsx  # HP bar, gp pips, item list
+│       ├── DiceFooter.tsx      # collapsible rolls of last turn
+│       └── CombatOverlay.tsx   # animated modal on attack: d20 → AC → −damage
 ```
 
 Hard rules (enforced in code, not norms):
@@ -310,6 +340,24 @@ The whole orchestrator is one file you can read in five minutes:
 
 ---
 
+## Web frontend — invariants
+
+The web layer carries the same no-leak rules as the Narrator. Three
+backend tests pin them:
+
+- `NpcCardDTO` exposes `disposition_norm` (a -1..1 float for bar rendering)
+  and `disposition_label` ("friendly" / "wary"), but **never** the raw integer,
+  goals, secrets, or memory contents.
+- `SceneDTO.entities` only includes co-located entities and only their
+  `id / name / kind / alive / hp_label` (HP is bucketed; the integer is hidden).
+- `test_npc_cards_filter_secrets_and_goals` scans the JSON payload for the
+  same nine secret literals the Narrator tests check.
+
+The portrait endpoint returns hash-coloured SVG initials with no LLM call
+(`/api/portraits/<npc_id>.svg`). Real SDXL generation is on the roadmap.
+
+---
+
 ## Roadmap
 
 - **Combat richer than 5e-lite** — armor classes from gear tables, multiple
@@ -318,11 +366,14 @@ The whole orchestrator is one file you can read in five minutes:
   each PC has its own inventory and HP
 - **NPCDirector(react) and (scene_entry) hooks** — currently stubbed; would
   let nearby NPCs react to combat / greet the player on entry
-- **Image gen for scenes** — small per-scene illustrations via SDXL or similar
+- **Real NPC portraits via SDXL / Flux** — `/api/portraits` already isolates
+  the call; swap the placeholder for an on-demand generator
 - **Long-term memory compression** — NPC `memory` lists are unbounded today;
   add a periodic LLM-summarisation pass for sessions ≥ 100 turns
-- **Streaming prose to the CLI** — show the narrator's response as it
-  generates instead of waiting for the full block
+- **Streaming prose** — both CLI and web should show the narrator's response
+  as it generates instead of waiting for the full block (SSE on `/api/turn`)
+- **Multiplayer** — multiple players in one session, each acting on their turn,
+  via WebSocket fan-out
 - **More scenarios** — Brackenhollow is a tutorial; want a city heist, a
   dungeon crawl, and a courtly intrigue
 
