@@ -6,6 +6,7 @@ build-backend = "hatchling.build"
 name = "taleforge"
 version = "0.1.0"
 description = "Four LLM agents play D&D so you don't need four friends — a multi-agent text RPG."
+readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "TaleForge contributors" }]
 license = { text = "MIT" }

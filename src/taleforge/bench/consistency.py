@@ -152,6 +152,9 @@ to one short sentence.
 async def _ask_chronicler(
     client: MinimaxClient, model: str, prose_history: list[str], question: str
 ) -> str:
+    """Ask the chronicler. Uses ``max_tokens=600`` to leave headroom for the
+    gateway's reasoning pass — short answers were getting eaten by reasoning
+    tokens at low budgets."""
     transcript = "\n\n".join(prose_history) or "(no narrative yet)"
     result = await client.chat(
         [
@@ -160,7 +163,7 @@ async def _ask_chronicler(
         ],
         model=model,
         temperature=0.1,
-        max_tokens=80,
+        max_tokens=600,
     )
     return result.visible_content.strip()
 
@@ -211,6 +214,10 @@ async def run_bench(
             # One bad turn shouldn't kill the whole bench.
             print(f"[bench] turn '{action_text}' failed: {e}")
 
+    # Use the fast model for the chronicler: cheap, less aggressive reasoning,
+    # ten one-line factual replies don't need opus quality.
+    chronicler_model = orchestrator.settings.model_fast
+
     state_truths: dict[str, Any] = {}
     narrator_answers: dict[str, str] = {}
     correct: dict[str, bool] = {}
@@ -219,7 +226,7 @@ async def run_bench(
         state_truths[q.id] = _coerce_for_json(truth)
         ans = await _ask_chronicler(
             orchestrator.client,
-            orchestrator.narrator.model,
+            chronicler_model,
             orchestrator.narrator.prose_history,
             q.question,
         )
