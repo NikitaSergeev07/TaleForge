@@ -25,19 +25,24 @@ class Settings(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     # ── Minimax credentials ─────────────────────────────────────────────────
+    # In this deployment "Minimax" is reached via the gngn.my gateway, which
+    # speaks OpenAI-compatible chat-completions and serves Minimax under
+    # Claude-branded model names.
     minimax_api_key: str | None = None
-    minimax_base_url: str = "https://api.minimax.io/v1"
+    minimax_base_url: str = "https://api.gngn.my/v1"
 
     # ── Cost-aware model selection (design rule #6) ─────────────────────────
-    model_quality: str = "MiniMax-M2.7"  # Narrator, NPCActor
-    model_fast: str = "MiniMax-M2.7-highspeed"  # Orchestrator, Director, RulesLawyer
+    # Gateway model names (claude-branded; Minimax under the hood).
+    model_quality: str = "claude-opus-4-7"   # Narrator, NPCActor
+    model_fast: str = "claude-haiku-4-5"     # Orchestrator, Director, RulesLawyer
 
     # ── Filesystem layout ───────────────────────────────────────────────────
     traces_dir: Path = Field(default_factory=lambda: Path("traces"))
     saves_dir: Path = Field(default_factory=lambda: Path("saves"))
 
     # ── HTTP client behavior ────────────────────────────────────────────────
-    request_timeout_s: float = 60.0
+    # 90s timeout: the gateway's reasoning passes can take a while on opus.
+    request_timeout_s: float = 90.0
     max_retries: int = 3
 
 
@@ -51,7 +56,7 @@ def get_settings() -> Settings:
     return Settings(
         minimax_api_key=os.getenv("MINIMAX_API_KEY"),
         minimax_base_url=os.getenv(
-            "MINIMAX_BASE_URL", "https://api.minimax.io/v1"
+            "MINIMAX_BASE_URL", "https://api.gngn.my/v1"
         ),
     )
 

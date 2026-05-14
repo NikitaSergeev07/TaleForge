@@ -65,8 +65,10 @@ class TokenUsage:
 class CompletionResult:
     """One chat call's outcome.
 
-    ``content`` is the raw assistant content WITH any ``<think>...</think>``
-    blocks intact. ``visible_content`` has them stripped — for CLI display only.
+    ``content`` is the assistant content WITH any inline ``<think>...</think>``
+    blocks intact. ``visible_content`` has them stripped (for CLI display).
+    ``thinking`` carries the gateway's separate ``reasoning_content`` field
+    (gngn.my surfaces M2.7's reasoning out-of-band rather than inline).
     """
 
     content: str
@@ -77,12 +79,15 @@ class CompletionResult:
     cost_usd: float
     latency_s: float
     tool_calls: list[dict] = field(default_factory=list)
+    thinking: str = ""  # message.reasoning_content from gateway, if any
 
     def to_assistant_message(self) -> dict[str, Any]:
         """Build an assistant turn for re-use in multi-turn history.
 
-        Critically, this returns ``content`` (with thinking) and NOT
-        ``visible_content`` — re-sending must preserve thinking blocks.
+        Returns ``content`` (with any inline thinking) and NOT ``visible_content``.
+        We deliberately do NOT re-send ``thinking`` (the separate
+        ``reasoning_content``) — Anthropic-style APIs (which the gateway
+        emulates) discard prior reasoning blocks on follow-up.
         """
 
         msg: dict[str, Any] = {"role": "assistant", "content": self.content}
@@ -100,10 +105,14 @@ class MinimaxClient:
     """
 
     # Pricing in USD per 1,000,000 tokens, as ``(input, output)``.
-    # NOTE: these are placeholder figures for the M2.7 family — verify against
-    # current Minimax pricing before reporting them publicly. The README in
-    # Step 9 will pull the live numbers from this dict.
+    # The gngn.my gateway serves Minimax under Claude-branded model names. We
+    # use Anthropic list prices as upper-bound placeholders; actual gateway
+    # pricing is likely lower (Minimax wholesale). Verify before publishing.
     PRICES_USD_PER_M_TOK: dict[str, tuple[float, float]] = {
+        "claude-opus-4-7":   (15.00, 75.00),
+        "claude-sonnet-4-6": (3.00, 15.00),
+        "claude-haiku-4-5":  (1.00, 5.00),
+        # Legacy direct-Minimax names retained for backwards-compat tests.
         "MiniMax-M2.7": (0.30, 1.20),
         "MiniMax-M2.7-highspeed": (0.10, 0.40),
     }
@@ -183,6 +192,7 @@ class MinimaxClient:
             raise MinimaxError(f"unexpected response shape: {data!r}") from e
 
         content = msg.get("content") or ""
+        thinking = msg.get("reasoning_content") or ""  # gngn.my surfaces M2.7's reasoning here
         tool_calls = list(msg.get("tool_calls") or [])
         finish_reason = choice.get("finish_reason", "stop")
         usage = TokenUsage.from_api(data.get("usage"))
@@ -197,6 +207,7 @@ class MinimaxClient:
             cost_usd=cost,
             latency_s=latency,
             tool_calls=tool_calls,
+            thinking=thinking,
         )
         self._calls.append(result)
         return result

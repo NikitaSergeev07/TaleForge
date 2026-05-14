@@ -161,6 +161,44 @@ async def test_chat_gives_up_after_max_retries(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_chat_parses_gateway_reasoning_content_field():
+    """gngn.my surfaces M2.7 reasoning in message.reasoning_content (out-of-band).
+
+    The client must capture it as result.thinking; visible_content is the
+    plain content. Re-sent assistant messages do NOT include thinking
+    (Anthropic-style discard).
+    """
+    transport = httpx.MockTransport(lambda req: httpx.Response(
+        200,
+        json={
+            "id": "x",
+            "model": "claude-opus-4-7",
+            "choices": [{
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": "Greetings.",
+                    "reasoning_content": "thought about how to greet politely",
+                },
+                "finish_reason": "stop",
+            }],
+            "usage": {"prompt_tokens": 100, "completion_tokens": 4, "total_tokens": 104},
+        },
+    ))
+    async with MinimaxClient(_settings(), transport=transport) as client:
+        r = await client.chat(
+            [{"role": "user", "content": "hi"}], model="claude-opus-4-7"
+        )
+        assert r.content == "Greetings."
+        assert r.visible_content == "Greetings."
+        assert r.thinking == "thought about how to greet politely"
+        # Re-sent assistant message does NOT include the gateway-side reasoning.
+        msg = r.to_assistant_message()
+        assert "thought about how" not in msg["content"]
+        assert "reasoning_content" not in msg
+
+
+@pytest.mark.asyncio
 async def test_to_assistant_message_preserves_thinking_for_multi_turn():
     transport = httpx.MockTransport(
         lambda req: _ok_response("<think>plan</think>Done.")
@@ -190,9 +228,14 @@ async def test_chat_without_api_key_raises():
 
 @pytest.mark.asyncio
 async def test_grumpy_innkeeper_real_api():
-    if not os.getenv("MINIMAX_API_KEY"):
-        pytest.skip("MINIMAX_API_KEY not set; skipping real-API call")
-    async with MinimaxClient() as client:
+    """One real call to the configured gateway. Skipped if no key in env."""
+    key = os.getenv("MINIMAX_API_KEY")
+    if not key or key == "replace-me":
+        pytest.skip("MINIMAX_API_KEY unset / placeholder; skipping real-API call")
+    from taleforge.config import get_settings
+
+    settings = get_settings()
+    async with MinimaxClient(settings) as client:
         result = await client.chat(
             [
                 {
@@ -204,12 +247,14 @@ async def test_grumpy_innkeeper_real_api():
                 },
                 {"role": "user", "content": "Say hi."},
             ],
-            model="MiniMax-M2.7",
+            model=settings.model_quality,
             temperature=0.7,
-            max_tokens=80,
+            max_tokens=200,  # gateway needs headroom for reasoning + reply
         )
         assert result.visible_content.strip(), "innkeeper said nothing"
         assert result.usage.completion_tokens > 0
         assert result.cost_usd > 0
         # Print so the user sees the in-character output during `pytest -s`.
         print(f"\n[innkeeper] {result.visible_content}")
+        if result.thinking:
+            print(f"[reasoning] {result.thinking[:200]}…")
