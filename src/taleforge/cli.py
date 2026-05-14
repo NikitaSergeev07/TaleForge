@@ -240,5 +240,47 @@ def load(session_id: str) -> None:
     play(session_id)
 
 
+@app.command()
+def bench(
+    session_id: str | None = typer.Argument(None, help="Session id (default: bench-<ts>)"),
+) -> None:
+    """Run the consistency benchmark; writes a JSON report under traces/."""
+    settings = get_settings()
+    if not settings.minimax_api_key:
+        console.print("[red]MINIMAX_API_KEY required for bench.[/]")
+        raise typer.Exit(1)
+    sid = session_id or f"bench-{int(time.time())}"
+    db = _session_db(sid, settings)
+    if db.exists():
+        console.print(f"[red]session {sid} already exists at {db}.[/]")
+        raise typer.Exit(1)
+    asyncio.run(_run_bench(sid, db, settings))
+
+
+async def _run_bench(session_id: str, db: Path, settings: Settings) -> None:
+    from dataclasses import asdict
+
+    from .bench.consistency import render_bench_report, run_bench
+
+    spath = _scenario_path("starter_village")
+    trace = _session_trace(session_id, settings)
+    keeper = WorldStateKeeper.from_scenario(
+        spath, session_id=session_id, db_path=db, trace_path=trace
+    )
+    keeper.save()
+
+    async with MinimaxClient(settings=settings) as client:
+        orch = Orchestrator(client, keeper, settings=settings)
+        console.print(f"[dim]running bench on {session_id} (30 scripted turns)…[/]")
+        report = await run_bench(orch, keeper)
+
+    report_path = settings.traces_dir / f"{session_id}_bench.json"
+    report_path.write_text(json.dumps(asdict(report), indent=2, default=str))
+    console.print(
+        Panel(render_bench_report(report), title=f"bench: {session_id}", border_style="magenta")
+    )
+    console.print(f"[dim]report: {report_path}[/]")
+
+
 if __name__ == "__main__":
     app()
