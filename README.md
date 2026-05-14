@@ -1,5 +1,12 @@
 # TaleForge
 
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776ab.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![tests](https://img.shields.io/badge/tests-87%20passing-3f6a4d)](#)
+[![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![React](https://img.shields.io/badge/frontend-React%2018-61dafb?logo=react&logoColor=white)](https://react.dev/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](#credits)
+[![No LangChain](https://img.shields.io/badge/no-LangChain%20%C2%B7%20LangGraph%20%C2%B7%20CrewAI-c2410c)](#why-no-langgraph)
+
 > Four specialist LLM agents play D&D so you don't need four friends.
 
 A multi-agent text RPG where a small Orchestrator coordinates a **World State
@@ -71,7 +78,7 @@ flowchart TD
 
 ```bash
 # 1. Install Python side
-git clone <this-repo> taleforge && cd taleforge
+git clone https://github.com/NikitaSergeev07/TaleForge.git && cd TaleForge
 pip install -e ".[dev]"     # uv sync also works
 
 # 2. Configure
