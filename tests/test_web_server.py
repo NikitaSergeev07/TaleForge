@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 def _wrap(content: str) -> dict:
     return {
         "id": "x",
-        "model": "claude-opus-4-7",
+        "model": "opus-4-7",
         "choices": [{
             "index": 0,
             "message": {"role": "assistant", "content": content},

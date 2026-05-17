@@ -1,8 +1,8 @@
 """Tests for the Minimax HTTP client.
 
 Most tests use ``httpx.MockTransport`` so they need neither network nor an API
-key. ONE test (:func:`test_grumpy_innkeeper_real_api`) actually calls
-``api.minimax.io`` and is skipped if ``MINIMAX_API_KEY`` is unset.
+key. ONE test (:func:`test_grumpy_innkeeper_real_api`) actually calls the
+configured gateway and is skipped if ``MINIMAX_API_KEY`` is unset.
 """
 
 from __future__ import annotations
@@ -166,13 +166,13 @@ async def test_chat_parses_gateway_reasoning_content_field():
 
     The client must capture it as result.thinking; visible_content is the
     plain content. Re-sent assistant messages do NOT include thinking
-    (Anthropic-style discard).
+    (gateway-protocol discard).
     """
     transport = httpx.MockTransport(lambda req: httpx.Response(
         200,
         json={
             "id": "x",
-            "model": "claude-opus-4-7",
+            "model": "opus-4-7",
             "choices": [{
                 "index": 0,
                 "message": {
@@ -187,7 +187,7 @@ async def test_chat_parses_gateway_reasoning_content_field():
     ))
     async with MinimaxClient(_settings(), transport=transport) as client:
         r = await client.chat(
-            [{"role": "user", "content": "hi"}], model="claude-opus-4-7"
+            [{"role": "user", "content": "hi"}], model="opus-4-7"
         )
         assert r.content == "Greetings."
         assert r.visible_content == "Greetings."

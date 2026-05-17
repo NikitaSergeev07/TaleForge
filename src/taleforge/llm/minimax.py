@@ -1,10 +1,14 @@
-"""Single async HTTP client for all Minimax M2.7 chat calls.
+"""Single async HTTP client for all Minimax chat calls.
 
-This module is the **only** place in TaleForge that performs HTTP to
-``api.minimax.io`` (per the hard rule "All HTTP to Minimax through ONE
-client"). It also centralises ``<think>...</think>`` block handling — required
-because M2.7 emits interleaved thinking blocks and the spec mandates we
-preserve them when re-sending multi-turn history.
+This module is the **only** place in TaleForge that performs HTTP to the
+gateway (per the hard rule "All HTTP through ONE client"). It also
+centralises ``<think>...</think>`` block handling — required because M2.7
+emits interleaved thinking blocks and the spec mandates we preserve them
+when re-sending multi-turn history.
+
+Gateway-specific model name strings (the literal value the gngn.my gateway
+expects in its `model` field) are isolated in :data:`_GATEWAY_MODEL_NAMES`;
+the rest of TaleForge uses neutral logical names like ``opus-4-7``.
 
 Public surface:
 
@@ -86,8 +90,8 @@ class CompletionResult:
 
         Returns ``content`` (with any inline thinking) and NOT ``visible_content``.
         We deliberately do NOT re-send ``thinking`` (the separate
-        ``reasoning_content``) — Anthropic-style APIs (which the gateway
-        emulates) discard prior reasoning blocks on follow-up.
+        ``reasoning_content``) — the gateway's protocol discards prior
+        reasoning blocks on follow-up calls.
         """
 
         msg: dict[str, Any] = {"role": "assistant", "content": self.content}
@@ -105,17 +109,23 @@ class MinimaxClient:
     """
 
     # Pricing in USD per 1,000,000 tokens, as ``(input, output)``.
-    # The gngn.my gateway serves Minimax under Claude-branded model names. We
-    # use Anthropic list prices as upper-bound placeholders; actual gateway
-    # pricing is likely lower (Minimax wholesale). Verify before publishing.
+    # Upper-bound placeholders; actual gateway pricing is likely lower
+    # (Minimax wholesale under the hood). Verify before publishing numbers.
     PRICES_USD_PER_M_TOK: dict[str, tuple[float, float]] = {
-        "claude-opus-4-7":   (15.00, 75.00),
-        "claude-sonnet-4-6": (3.00, 15.00),
-        "claude-haiku-4-5":  (1.00, 5.00),
+        "opus-4-7":   (15.00, 75.00),
+        "sonnet-4-6": (3.00, 15.00),
+        "haiku-4-5":  (1.00, 5.00),
         # Legacy direct-Minimax names retained for backwards-compat tests.
         "MiniMax-M2.7": (0.30, 1.20),
         "MiniMax-M2.7-highspeed": (0.10, 0.40),
     }
+
+    # Logical → gateway model name overrides; populated from environment
+    # (GATEWAY_OPUS_MODEL / GATEWAY_SONNET_MODEL / GATEWAY_HAIKU_MODEL) in
+    # ``__init__`` below. The rest of TaleForge uses only the logical keys
+    # ("opus-4-7" etc.); this dict is the single place the gateway-side
+    # strings appear, and they live in .env, not in source.
+    _gateway_model_names: dict[str, str]
 
     def __init__(
         self,
@@ -136,6 +146,15 @@ class MinimaxClient:
             transport=transport,
         )
         self._calls: list[CompletionResult] = []
+        # Build the gateway-name mapping from env-loaded settings. An empty
+        # override means "send the logical name as-is".
+        self._gateway_model_names = {
+            k: v for k, v in {
+                "opus-4-7":   self.settings.gateway_opus_model,
+                "sonnet-4-6": self.settings.gateway_sonnet_model,
+                "haiku-4-5":  self.settings.gateway_haiku_model,
+            }.items() if v
+        }
 
     async def __aenter__(self) -> "MinimaxClient":
         return self
@@ -166,7 +185,9 @@ class MinimaxClient:
             raise MinimaxError("MINIMAX_API_KEY is not set; cannot call Minimax API")
 
         body: dict[str, Any] = {
-            "model": model,
+            # Translate our logical model name to the gateway-specific string
+            # if an override is configured in .env; otherwise pass through.
+            "model": self._gateway_model_names.get(model, model),
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,

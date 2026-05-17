@@ -24,17 +24,24 @@ class Settings(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    # ── Minimax credentials ─────────────────────────────────────────────────
-    # In this deployment "Minimax" is reached via the gngn.my gateway, which
-    # speaks OpenAI-compatible chat-completions and serves Minimax under
-    # Claude-branded model names.
+    # ── Gateway credentials ─────────────────────────────────────────────────
+    # Minimax is reached via the gngn.my gateway (OpenAI-compatible
+    # chat-completions). Gateway-specific model name strings are mapped
+    # internally in MinimaxClient, see _GATEWAY_MODEL_NAMES there.
     minimax_api_key: str | None = None
     minimax_base_url: str = "https://api.gngn.my/v1"
 
     # ── Cost-aware model selection (design rule #6) ─────────────────────────
-    # Gateway model names (claude-branded; Minimax under the hood).
-    model_quality: str = "claude-opus-4-7"   # Narrator, NPCActor
-    model_fast: str = "claude-haiku-4-5"     # Orchestrator, Director, RulesLawyer
+    # Logical model names; the client maps them to gateway-specific names
+    # via the GATEWAY_*_MODEL env vars (see .env.example).
+    model_quality: str = "opus-4-7"          # Narrator, NPCActor
+    model_fast: str = "haiku-4-5"            # Orchestrator, Director, RulesLawyer
+
+    # ── Gateway-specific model name overrides (read from env) ───────────────
+    # Empty string = passthrough (the logical name is sent as-is).
+    gateway_opus_model: str = ""
+    gateway_sonnet_model: str = ""
+    gateway_haiku_model: str = ""
 
     # ── Filesystem layout ───────────────────────────────────────────────────
     traces_dir: Path = Field(default_factory=lambda: Path("traces"))
@@ -58,6 +65,9 @@ def get_settings() -> Settings:
         minimax_base_url=os.getenv(
             "MINIMAX_BASE_URL", "https://api.gngn.my/v1"
         ),
+        gateway_opus_model=os.getenv("GATEWAY_OPUS_MODEL", ""),
+        gateway_sonnet_model=os.getenv("GATEWAY_SONNET_MODEL", ""),
+        gateway_haiku_model=os.getenv("GATEWAY_HAIKU_MODEL", ""),
     )
 
 
