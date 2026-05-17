@@ -1,11 +1,20 @@
-"""Orchestrator — the deterministic call graph (per design rule #5).
+"""Orchestrator — compiles + runs the per-turn LangGraph.
 
-Per turn: ``parse_action`` (LLM) → ``_route`` (attack/skill→Lawyer,
-talk→Director, move→local, look/inventory→direct) → ``keeper.try_apply`` for
-each proposed mutation → Narrator (skipped for inventory). The Orchestrator
-never mutates state directly. Per-turn cost is the delta in
-``client.total_cost_usd``; rejections are surfaced in :class:`TurnResult` so
-the bench can count them. Sub-agents are pluggable for tests / bench.
+Each turn is a single ``graph.ainvoke`` over the StateGraph built in
+``agents/graph.py``. The graph encodes the deterministic call sequence:
+``parse → (lawyer_attack | lawyer_skill | director_talk | move | look | other)
+→ apply → narrator → END``, with ``inventory`` bypassing both apply and
+narrator (no LLM beyond the parser).
+
+The Orchestrator itself owns:
+- the shared :class:`MinimaxClient` (for cost tracking)
+- the :class:`WorldStateKeeper` (the only state writer)
+- the three sub-agents instantiated lazily (Narrator, RulesLawyer, NPCDirector)
+- the compiled graph (built once in ``__init__``, reused across turns)
+- per-turn JSONL trace emission (``_trace_turn``)
+
+External contract (``take_turn`` signature + :class:`TurnResult` shape) stays
+the same so the CLI, the web API, and the bench keep working unchanged.
 
 TODO: NPCDirector(react) on attack and (scene_entry) on move from the spec's
 call graph — the Narrator currently handles scene transitions adequately.
@@ -24,6 +33,7 @@ from ..llm.prompts import ORCHESTRATOR_PARSE
 from ..models import Action, Outcome, WorldState
 from ..state.store import WorldStateKeeper
 from .base import BaseAgent
+from .graph import build_turn_graph
 from .narrator import Narrator
 from .npc_director import NPCDirector
 from .rules_lawyer import RulesLawyer
@@ -74,25 +84,26 @@ class Orchestrator(BaseAgent):
         self.narrator = narrator or Narrator(client, settings=self.settings)
         self.lawyer = rules_lawyer or RulesLawyer(client, settings=self.settings)
         self.director = npc_director or NPCDirector(client, settings=self.settings)
+        # Compile the LangGraph once; reused across every turn of this session.
+        self.graph = build_turn_graph(self)
 
     # ── public ──────────────────────────────────────────────────────
 
     async def take_turn(self, raw_input: str, *, language: str | None = None) -> TurnResult:
+        """Run one turn through the compiled LangGraph and pack the result."""
         lang = language or self.language
         cost_before = self.client.total_cost_usd
-        action = await self.parse_action(raw_input, self.keeper.state)
-        outcome = await self._route(action, language=lang)
 
-        applied: list[tuple[dict, list[str]]] = []
-        rejected: list[tuple[dict, str]] = []
-        for mut in outcome.state_mutations:
-            ok, result = self.keeper.try_apply(mut)
-            (applied if ok else rejected).append((mut, result))
+        final_state = await self.graph.ainvoke({
+            "raw_input": raw_input,
+            "language": lang,
+        })
 
-        if action.intent == "inventory":
-            prose = self._render_inventory()
-        else:
-            prose = await self.narrator.narrate(self.keeper.state, outcome, language=lang)
+        action: Action = final_state["action"]
+        outcome: Outcome = final_state["outcome"]
+        prose: str = final_state.get("prose", "")
+        applied = list(final_state.get("applied_mutations", []))
+        rejected = list(final_state.get("rejected_mutations", []))
 
         self.keeper.advance_turn()
         result = TurnResult(
@@ -137,27 +148,7 @@ class Orchestrator(BaseAgent):
             parameters=dict(parsed.get("parameters") or {}),
         )
 
-    # ── routing ────────────────────────────────────────────────────
-
-    async def _route(self, action: Action, *, language: str = "en") -> Outcome:
-        state = self.keeper.state
-        intent = action.intent
-
-        if intent == "attack":
-            return await self.lawyer.resolve_attack(state, action)
-        if intent == "skill_check":
-            return await self.lawyer.resolve_skill_check(state, action)
-        if intent == "talk":
-            return await self.director.talk(state, action, language=language)
-        if intent == "move":
-            return self._handle_move(action)
-        if intent == "look":
-            return Outcome(success=True, public_facts=["You take in your surroundings."])
-        if intent == "inventory":
-            inv = state.entities[state.player_id].inventory
-            listing = ", ".join(inv) if inv else "nothing"
-            return Outcome(success=True, public_facts=[f"You are carrying: {listing}."])
-        return Outcome(success=False, public_facts=["Nothing happens."])
+    # ── routing helpers (called by graph nodes) ────────────────────
 
     def _handle_move(self, action: Action) -> Outcome:
         state = self.keeper.state

@@ -5,20 +5,21 @@
 [![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/frontend-React%2018-61dafb?logo=react&logoColor=white)](https://react.dev/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](#)
-[![Стек](https://img.shields.io/badge/asyncio-pydantic%20%C2%B7%20httpx-475569)](#о-стеке)
+[![LangGraph](https://img.shields.io/badge/orchestration-LangGraph%201.2-1c3d5a?logo=langchain&logoColor=white)](#граф-вызовов-в-langgraph)
 
 > Четыре специализированных LLM-агента играют в D&D, чтобы тебе не нужно было четырёх друзей.
 
 Мульти-агентная текстовая RPG: маленький Orchestrator координирует **Хранителя
 состояния мира**, **Судью правил**, **Режиссёра NPC** (который роутит на
 агентов-исполнителей по одному на NPC) и **Рассказчика**, чтобы провести
-соло-сессию в духе D&D прямо в терминале или браузере. Чистый `asyncio` +
-`pydantic`. Без LangChain, LangGraph, CrewAI — просто ~2000 строк явного кода,
-которые можно прочитать от и до.
+соло-сессию в духе D&D прямо в терминале или браузере. Поверх `asyncio` +
+`pydantic` + `httpx`; маршрутизация ходов — через **LangGraph StateGraph**.
 
 Суть проекта не в том, что «LLM может играть в D&D» (может). Суть в
 **разделении ответственности**: каждый агент отвечает строго за одну вещь, а
-канонический мир имеет ровно одного писателя.
+канонический мир имеет ровно одного писателя. LangGraph даёт визуализируемый
+граф вызовов, явный TypedDict-state между нодами и точку расширения, когда
+маршрутизация со временем перестанет быть статической.
 
 ---
 
@@ -326,25 +327,69 @@ frontend/                   # React 18 + Vite 4 + Tailwind 3 + framer-motion
 
 ---
 
-## О стеке
+## Граф вызовов в LangGraph
 
-Под капотом TaleForge — `asyncio` + `pydantic` + `httpx`, без специализированных
-фреймворков для агентов. Это сознательный выбор: граф вызовов в этой задаче
-зафиксирован — для каждого интента заранее известно, кто, в каком порядке и с
-какими аргументами зовётся (см. `agents/orchestrator.py`, метод `_route`).
+Каждый ход — это один `graph.ainvoke` по `StateGraph`, который компилируется
+один раз в `Orchestrator.__init__` и переиспользуется через все ходы сессии.
+Описание графа живёт в [`src/taleforge/agents/graph.py`](src/taleforge/agents/graph.py)
+и автоматически отрисовывается в эту mermaid-диаграмму:
 
-Когда граф должен переписываться на лету — например, модель сама решает,
-какого следующего агента позвать, или поведение зависит от ответа предыдущего
-шага — фреймворки вроде LangGraph или CrewAI начинают приносить пользу: они
-дают типизированные edge-функции, runtime-визуализацию графа, persistence
-state между шагами. В нашем сценарии этой динамики нет, поэтому слой
-абстракции добавил бы код, не давая функционального выигрыша.
+```mermaid
+graph TD;
+    __start__([__start__]):::first
+    parse(parse)
+    lawyer_attack(lawyer_attack)
+    lawyer_skill(lawyer_skill)
+    director_talk(director_talk)
+    move(move)
+    look(look)
+    inventory(inventory)
+    other(other)
+    apply(apply)
+    narrator(narrator)
+    __end__([__end__]):::last
+    __start__ --> parse;
+    parse -. attack .-> lawyer_attack;
+    parse -. skill_check .-> lawyer_skill;
+    parse -. talk .-> director_talk;
+    parse -. move .-> move;
+    parse -. look .-> look;
+    parse -. inventory .-> inventory;
+    parse -. other .-> other;
+    lawyer_attack --> apply;
+    lawyer_skill --> apply;
+    director_talk --> apply;
+    move --> apply;
+    look --> apply;
+    other --> apply;
+    apply --> narrator;
+    narrator --> __end__;
+    inventory --> __end__;
+    classDef default fill:#f2f0ff,line-height:1.2
+    classDef first fill-opacity:0
+    classDef last fill:#bfb6fc
+```
 
-Орекстратор — один файл, который читается за пять минут:
-[`src/taleforge/agents/orchestrator.py`](src/taleforge/agents/orchestrator.py).
-Если задача со временем эволюционирует к динамической маршрутизации — переход
-на LangGraph будет точечной заменой `_route` на StateGraph, остальные слои
-(Keeper, агенты, бенчмарк) не затронуты.
+Каждый узел — обычная Python-функция (синхронная или async), которая принимает
+текущий `TurnState` (TypedDict) и возвращает delta-словарь. Сам `TurnState`
+несёт: `raw_input`, `language`, `action`, `outcome`, `prose`,
+`applied_mutations`, `rejected_mutations`. Никакого глобального state-объекта —
+всё что нужно ноде, лежит в state-канале.
+
+Несколько свойств, которые langgraph даёт сразу:
+
+| Что                                       | Где это видно                                |
+|-------------------------------------------|----------------------------------------------|
+| auto-mermaid графа                        | `graph.get_graph().draw_mermaid()` ↑         |
+| тесты на форму графа                      | `tests/test_graph.py` (6 lock-in-проверок)   |
+| единственная точка применения мутаций     | узел `apply` — конвергируют все resolvers    |
+| LLM в маршрутизаторе нет                  | `route_by_intent` — чистая функция           |
+| легко добавить новую ветку (например narrator-react) | один `add_node` + `add_edge`        |
+| будущий checkpointer / human-in-the-loop  | бесплатно из коробки langgraph               |
+
+Если задача со временем потребует runtime-перезаписи графа (например, модель
+сама решает следующего агента) — StateGraph остаётся, меняется только
+содержимое edges.
 
 ---
 
