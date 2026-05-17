@@ -4,127 +4,129 @@
 [![tests](https://img.shields.io/badge/tests-87%20passing-3f6a4d)](#)
 [![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/frontend-React%2018-61dafb?logo=react&logoColor=white)](https://react.dev/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](#credits)
-[![No LangChain](https://img.shields.io/badge/no-LangChain%20%C2%B7%20LangGraph%20%C2%B7%20CrewAI-c2410c)](#why-no-langgraph)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](#благодарности)
+[![Без фреймворков](https://img.shields.io/badge/без-LangChain%20%C2%B7%20LangGraph%20%C2%B7%20CrewAI-c2410c)](#почему-не-langgraph)
 
-> Four specialist LLM agents play D&D so you don't need four friends.
+> Четыре специализированных LLM-агента играют в D&D, чтобы тебе не нужно было четырёх друзей.
 
-A multi-agent text RPG where a small Orchestrator coordinates a **World State
-Keeper**, a **Rules Lawyer**, an **NPC Director** (which routes to per-NPC
-sub-agents), and a **Narrator** to run a D&D-flavored solo session in your
-terminal. Plain `asyncio` + `pydantic`. No LangChain, no LangGraph, no CrewAI —
-just ~2,000 lines of explicit code you can read end-to-end.
+Мульти-агентная текстовая RPG: маленький Orchestrator координирует **Хранителя
+состояния мира**, **Судью правил**, **Режиссёра NPC** (который роутит на
+агентов-исполнителей по одному на NPC) и **Рассказчика**, чтобы провести
+соло-сессию в духе D&D прямо в терминале или браузере. Чистый `asyncio` +
+`pydantic`. Без LangChain, LangGraph, CrewAI — просто ~2000 строк явного кода,
+которые можно прочитать от и до.
 
-The point isn't "LLMs can play D&D" (they can). The point is **separation of
-concerns**: each agent owns exactly one responsibility, and the canonical
-world state has exactly one writer.
+Суть проекта не в том, что «LLM может играть в D&D» (может). Суть в
+**разделении ответственности**: каждый агент отвечает строго за одну вещь, а
+канонический мир имеет ровно одного писателя.
 
 ---
 
-## Architecture
+## Архитектура
 
 ```mermaid
 flowchart TD
-    P([Player]) -->|raw text| O[Orchestrator]
+    P([Игрок]) -->|сырой текст| O[Orchestrator]
 
-    O -->|parse_action| PA[(parser LLM)]
-    PA -->|Action{intent,targets}| O
+    O -->|parse_action| PA[(парсер LLM)]
+    PA -->|"Action: intent + targets"| O
 
     O -->|attack / skill_check| L[Rules Lawyer]
     O -->|talk| D[NPC Director]
-    O -->|move| MV[local move]
-    O -->|look / inventory| OUT[direct]
+    O -->|move| MV[локальный move]
+    O -->|look / inventory| OUT[без LLM]
 
-    L -->|local d20<br/>seeded RNG| L
-    L -.->|fuzzy DC only| LL[(lawyer LLM)]
+    L -->|"локальный d20, seeded RNG"| L
+    L -.->|только фуззи DC| LL[(lawyer LLM)]
 
-    D -->|route by id| A1[NPC Actor · Maren]
-    D -->|route by id| A2[NPC Actor · Roan]
-    D -->|route by id| A3[NPC Actor · Tibor]
-    A1 & A2 & A3 -->|in-character reply<br/>+ remember + delta| AL[(actor LLM)]
+    D -->|роут по id| A1[NPC Actor · Maren]
+    D -->|роут по id| A2[NPC Actor · Roan]
+    D -->|роут по id| A3[NPC Actor · Tibor]
+    A1 -->|"reply + remember + delta"| AL[(actor LLM)]
+    A2 --> AL
+    A3 --> AL
 
-    L -.->|proposed mutations| K[(World State Keeper)]
-    D -.->|proposed mutations| K
-    MV -.->|proposed mutations| K
-    K -->|validate + apply| S[(WorldState)]
-    K -->|reject invalid| T[(JSONL trace)]
+    L -.->|предложенные мутации| K[(World State Keeper)]
+    D -.->|предложенные мутации| K
+    MV -.->|предложенные мутации| K
+    K -->|валидация и применение| S[(WorldState)]
+    K -->|отклонение невалидных| T[(JSONL trace)]
 
     S --> N[Narrator]
-    N -->|prose ONLY<br/>no secrets, no goals| NL[(narrator LLM)]
-    NL -->|prose| P
+    N -->|"только проза, без секретов и целей"| NL[(narrator LLM)]
+    NL -->|проза| P
 ```
 
-**The five rules that make this work** (also enforced in code, see
-`tests/`):
+**Пять правил, на которых всё держится** (зафиксированы тестами в `tests/`):
 
-1. **Only the Keeper writes state.** Other agents propose tool-call-style
-   mutations (`{op, args}`); the Keeper validates against the current state
-   and applies — or rejects.
-2. **The Narrator never sees secrets.** Its prompt input is filtered to
-   public facts, the visible scene (with HP bucketed to qualitative labels),
-   and the last 3 prose turns.
-3. **One head per character.** The NPC Director is a router, not a
-   multi-character actor. Each NPC has its own system prompt + own
-   conversation history; a single LLM call never plays two characters.
-4. **Dice are local.** `random.Random(seed, turn, *salts)` from
-   `WorldState.rng_seed` makes every roll reproducible. The LLM is consulted
-   only to set a fuzzy DC for ambiguous skill checks.
-5. **The call graph is deterministic for a given intent.** No agent
-   "decides" to call another agent. The Orchestrator's switch is 30 lines.
+1. **Только Keeper пишет в state.** Остальные агенты *предлагают* мутации в
+   формате tool-call (`{op, args}`); Keeper валидирует их против текущего
+   состояния и либо применяет, либо отклоняет.
+2. **Рассказчик не видит секретов.** Его вход отфильтрован до публичных
+   фактов, видимой сцены (HP в виде слов, не чисел) и последних 3 абзацев
+   прозы.
+3. **Одна голова на одного персонажа.** NPC Director — это роутер, а не
+   мульти-характерный актёр. У каждого NPC свой системный промпт и своя
+   история разговора; один LLM-вызов никогда не играет за двоих.
+4. **Кости бросаются локально.** `random.Random(seed, turn, *salts)` из
+   `WorldState.rng_seed` делает каждый бросок воспроизводимым. LLM зовётся
+   только для определения нечётких DC у скилл-чеков.
+5. **Граф вызовов детерминирован для каждого интента.** Ни один агент сам не
+   «решает» позвать другого. Switch в Orchestrator — 30 строк.
 
 ---
 
-## Quickstart
+## Быстрый старт
 
 ```bash
-# 1. Install Python side
+# 1. Python-часть
 git clone https://github.com/NikitaSergeev07/TaleForge.git && cd TaleForge
-pip install -e ".[dev]"     # uv sync also works
+pip install -e ".[dev]"     # `uv sync` тоже работает
 
-# 2. Configure
+# 2. Конфиг
 cp .env.example .env
-# edit .env: paste your gngn.my gateway token (Anthropic-style sk-ant-…)
+# Открой .env и вставь свой токен gngn.my (формат Anthropic — sk-ant-…)
 
-# 3. Verify
-pytest                       # 83 tests, ~10s
+# 3. Проверка
+pytest                       # 87 тестов, ~10 сек
 
-# 4a. Play in the terminal
+# 4а. Играть в терминале
 taleforge new --scenario starter_village
-# prints a session id, e.g. starter_village-1715639500
+# Вернёт session id вида starter_village-1715639500
 taleforge play starter_village-1715639500
 
-# 4b. OR play in the web UI
-# terminal A — backend:
+# 4б. Или играть в браузере
+# Терминал A — бэкенд:
 uvicorn taleforge.web.server:app --port 8000
-# terminal B — frontend:
+# Терминал B — фронтенд:
 cd frontend && npm install && npm run dev
-# open http://localhost:5173
+# Открой http://localhost:5173
 ```
 
-In the **CLI** play loop:
+В **CLI** play-loop:
 
 ```
-> look around
-> attack the dire wolf
-> ask Maren about the wolves
+> осмотрись вокруг
+> атакуй жуткого волка
+> спроси Марен про волков
 > /save
 > /quit
 ```
 
-Slash commands (handled locally, no LLM):
+Slash-команды (обрабатываются локально, без LLM):
 `/save` `/quit` `/state` `/inv` `/undo` `/rolls` `/help`.
 
-In the **web UI**: type free-text actions in the centre, click suggestion chips,
-watch the world map highlight your current location, hover NPC cards on the
-right to see disposition / HP / "remembers you" flags, and get a combat
-overlay on every attack roll.
+В **веб-интерфейсе**: пиши свободный текст в центре, кликай по чипам-подсказкам,
+смотри как карта мира подсвечивает твоё текущее местоположение, наводи на
+карточки NPC справа чтобы увидеть disposition / HP / флаг «помнит тебя»,
+смотри боевой оверлей при каждом броске на атаку.
 
 ---
 
-## Sample transcript
+## Пример прохождения
 
-> *5 real turns from a `taleforge bench` run on the starter scenario, prose
-> verbatim from `claude-opus-4-7` via the gngn.my gateway.*
+> *5 реальных ходов из прогона `taleforge bench` на стартовом сценарии. Проза
+> verbatim от `claude-opus-4-7` через шлюз gngn.my.*
 
 ```
 > look around
@@ -139,283 +141,285 @@ overlay on every attack roll.
 > A man in a patchwork cloak leans against the well, fingers dancing over the
 > strings of a battered lute. Tibor the Bard, if the stories are true — and
 > they usually aren't when they involve him.
->
-> The north road leads uphill toward darker tree cover. East, toward the
-> smithy's glow. West, deeper into the village's residential clusters.
 
 ```
 > say hi to Maren
 ```
 > The Boar & Barrel sits at the south end of the square, its weathered sign
-> creaking in the wind. You push through the door and the noise of the
-> village fades behind you. Low beams arch overhead, blackened by years of
-> hearth-smoke, and a peat fire mutters in a stone hearth near the back.
-> Copper pots gleam along the mantle, catching the dim light.
->
-> Maren the Innkeeper stands behind the counter, wiping a tankard with a
-> worn cloth. She glances up as you enter, her expression neutral but not
-> unfriendly. […] *Maren offers you a brief nod.* "Welcome to The Boar &
-> Barrel, traveler! I'm Maren, and this is my establishment. What can I get
-> you?"
+> creaking in the wind. […] *Maren offers you a brief nod.* "Welcome to The
+> Boar & Barrel, traveler! I'm Maren, and this is my establishment. What can
+> I get you?"
 
 ```
-> attack the dire wolf      [d20=18+4=22 vs AC12 → hit · 1d6+2=3 dmg]
+> attack the dire wolf      [d20=18+4=22 против AC12 → попадание · 1d6+2=3 урона]
 ```
 > The blade finds its mark. Your shortsword bites into the wolf's flank, a
-> clean line of red opening across dark fur. The beast twists mid-lunge,
-> more startled than hurt, and for a single heartbeat you see something
-> flicker behind those yellow eyes — not fear, not yet, but a recalculation.
-> The old kill-smell of the den fills your nostrils as you wrench the blade
-> free. Three points of damage, clean and bright against the shadows.
+> clean line of red opening across dark fur. The beast twists mid-lunge, more
+> startled than hurt, and for a single heartbeat you see something flicker
+> behind those yellow eyes — not fear, not yet, but a recalculation.
 
 ```
-> attack the dire wolf again   [d20=16+4=20 vs AC12 → hit · 1d6+2=4 dmg]
+> attack the dire wolf again   [d20=16+4=20 против AC12 → попадание · 1d6+2=4 урона]
 ```
 > The wolf's circling stutter-step betrays it. You lunge first, driving your
-> shortsword past the guard of matted fur and into the wound already opened
-> on its flank. Four more points of damage, the blade grinding against rib
-> before sliding free. The Dire Wolf snarls, but the sound is wet, wrong —
-> blood wells dark from the gash now splitting wider.
+> shortsword past the guard of matted fur and into the wound already opened on
+> its flank. Four more points of damage, the blade grinding against rib before
+> sliding free.
 
 ```
 > tell Elder Roan the wolf is dead
 ```
-> The fire paints everything in shades of ember and shadow. You step inside,
-> and the heat presses against you like a living thing, the bellows wheezing
-> their steady rhythm beside the forge. Elder Roan turns from the coals, her
-> hammer pausing mid-swing.
+> The fire paints everything in shades of ember and shadow. […] She looks at
+> you slowly, measuring. *"Dead. Already."* A long breath. *"And the pups?
+> Still in the den, or did you root them out too?"* Her tone is hard to read —
+> not quite grateful, not quite accusatory. *"The council will want proof,
+> you know. Ears or a fang. For the bounty."*
+
+И то же самое на русском (один LLM-вызов с language=ru):
+
+```
+> осмотрись вокруг
+```
+> Вы окидываете взглядом площадь Брекенхоллоу. Булыжники под ногами потемнели
+> от времени, у самого края бьёт колодец с отколотым краем — вода в нём тихо
+> покачивается от ветра. Доска объявлений увешана пёстрыми листовками, края
+> которых трепещут на сквозняке. Из-за поворота к востоку доносится густой
+> запах дыма от кузницы, и вместе с ним — мерный звон молота по наковальне.
 >
-> She looks at you slowly, measuring. *"Dead. Already."* A long breath. *"And
-> the pups? Still in the den, or did you root them out too?"* Her tone is
-> hard to read — not quite grateful, not quite accusatory. *"The council
-> will want proof, you know. Ears or a fang. For the bounty."*
+> Неподалёку, прислонившись к краю колодца, стоит Тибор Бард — в цветастом
+> колете и с лютней за спиной. Он замечает вас и слегка кивает, не прерывая
+> настройку струн.
 
 ---
 
-## Consistency benchmark
+## Бенчмарк консистентности
 
-`taleforge bench [session_id]` runs a 30-action script through the
-orchestrator, then asks a Chronicler (claude-haiku-4-5 with a Q&A framing,
-fed only the Narrator's prose history — *no* state visibility) ten factual
-questions whose ground truth is read directly from `WorldState`. This
-measures how well the prose record reflects the actual game state.
+`taleforge bench [session_id]` гоняет 30-ходовый скрипт через оркестратор, а
+потом задаёт Хронисту (`claude-haiku-4-5` в Q&A-режиме, на вход — только
+история прозы Рассказчика, **без** доступа к state) десять фактологических
+вопросов, чьи правильные ответы читаются напрямую из `WorldState`. Это
+измеряет, насколько хорошо текстовая проза отражает реальное состояние мира.
 
-### Real run on the starter scenario
+### Реальный прогон на стартовом сценарии
 
-| Metric                       | Value           |
-|------------------------------|-----------------|
-| Scripted turns               | 30              |
-| Mutations applied            | 16              |
-| Mutation rejection rate      | 0% (0 / 16)     |
-| Narrator recall accuracy     | **40% (4 / 10)** |
-| Total cost (opus + haiku)    | **$2.87**       |
-| Average cost / turn          | ≈ $0.096        |
+| Метрика                       | Значение         |
+|-------------------------------|------------------|
+| Скриптованных ходов           | 30               |
+| Мутаций применено             | 16               |
+| Доля отклонённых мутаций      | 0% (0 / 16)      |
+| Recall Рассказчика            | **40% (4 / 10)** |
+| Стоимость прогона (opus + haiku) | **$2.87**        |
+| Средняя стоимость хода        | ≈ $0.096         |
 
-Per-question breakdown:
+Покажу по вопросам:
 
-| Question                        | Truth (state)         | Narrator answer                                   | ✓ |
-|---------------------------------|-----------------------|---------------------------------------------------|---|
-| Is the dire wolf alive?         | `True`                | "Yes."                                            | ✓ |
-| Is Tibor still alive?           | `True`                | "Tibor the Bard is still alive."                  | ✓ |
-| Where is the player?            | `Village Square`      | "Hask's Smithy, inside the forge room…"           | ✗ |
-| How many gp does the player have? | `10`                | "8"                                               | ✗ |
-| Player HP?                      | `18`                  | "unknown"                                         | ✗ |
-| Tibor disposition?              | `friendly`            | "warm"                                            | ✗ |
-| Maren disposition?              | `friendly`            | "neutral"                                         | ✗ |
-| Howling Woods quest state?      | `active`              | "active"                                          | ✓ |
-| Has Tibor learned anything?     | `False`               | "No."                                             | ✓ |
-| In-game day?                    | `1`                   | "unknown"                                         | ✗ |
+| Вопрос                                | Истина (state)        | Ответ Рассказчика                                | ✓ |
+|---------------------------------------|-----------------------|--------------------------------------------------|---|
+| Жив ли жуткий волк?                   | `True`                | "Yes."                                           | ✓ |
+| Жив ли Тибор?                         | `True`                | "Tibor the Bard is still alive."                 | ✓ |
+| Где сейчас игрок?                     | `Village Square`      | "Hask's Smithy, inside the forge room…"          | ✗ |
+| Сколько у игрока gp?                  | `10`                  | "8"                                              | ✗ |
+| HP игрока?                            | `18`                  | "unknown"                                        | ✗ |
+| Disposition Тибора?                   | `friendly`            | "warm"                                           | ✗ |
+| Disposition Марен?                    | `friendly`            | "neutral"                                        | ✗ |
+| Состояние квеста Howling Woods?       | `active`              | "active"                                         | ✓ |
+| Узнал ли Тибор что-то об игроке?      | `False`               | "No."                                            | ✓ |
+| Какой день в игре?                    | `1`                   | "unknown"                                        | ✗ |
 
-**Reading the result**: 40% is honest, not great. Where the Narrator wins:
-binary state (alive / quest active / nothing learned). Where it loses:
-**numeric state the prose deliberately doesn't surface** (gp count, HP
-integer, in-game day) and **scene transitions where the prose lagged the
-mutation** (the player's last `move` was applied to state but the narrator
-hadn't recapped them in the new room yet).
+**Как читать результат:** 40% — это честно, не «отлично». Где Рассказчик
+выигрывает: бинарные факты (живой / квест активен / ничего нового не узнал).
+Где проигрывает: **численное состояние, которое проза намеренно не
+озвучивает** (gp count, точные HP, день) и **переходы между сценами, где
+проза отстала от мутации** (последний `move` игрока применился к state, но
+Рассказчик ещё не описал его в новой комнате).
 
-This is what the bench is *for*: the gap between "what happened" and "what
-got told" is exactly the consistency hole multi-agent text RPGs spend the
-rest of their existence paving over. Knowing the gap is 40% on a 30-turn
-script is a useful starting point.
+Это и есть смысл бенчмарка: разница между «что произошло» и «что было
+рассказано» — та самая дыра в консистентности, которую мульти-агентные
+текстовые RPG обычно затирают своим существованием. Знать, что разрыв 40%
+на 30-ходовом скрипте — полезная отправная точка.
 
-The full JSON report lands in `traces/<session_id>_bench.json` with every
-question, truth, narrator answer, and grade.
-
----
-
-## Cost
-
-Per design rule #6, agents are split across two model tiers:
-
-| Agent          | Model                | Why                  |
-|----------------|----------------------|----------------------|
-| Narrator       | `claude-opus-4-7`    | Voice / quality      |
-| NPC Actor      | `claude-opus-4-7`    | Character voice      |
-| NPC Director   | `claude-haiku-4-5`   | Cheap routing        |
-| Rules Lawyer   | `claude-haiku-4-5`   | Cheap DC-setting     |
-| Orchestrator   | `claude-haiku-4-5`   | Cheap intent parse   |
-
-Names are gateway labels — `gngn.my` serves Minimax under Claude branding.
-Pricing is computed live in `MinimaxClient.estimate_cost_usd` and reported
-both per-turn (CLI footer) and totally (bench report).
-
-Observed costs from the bench run above (Anthropic list-price upper-bound
-in the pricing table; actual gateway pricing is likely lower):
-
-| Intent / agent      | Typical per-turn | Notes                                |
-|---------------------|------------------|--------------------------------------|
-| `look`              | ≈ $0.06          | parser (haiku) + narrator (opus)     |
-| `move`              | ≈ $0.06–0.09     | parser + narrator                    |
-| `talk` (NPC)        | ≈ $0.12–0.13     | parser + actor (opus) + narrator     |
-| `attack`            | ≈ $0.10          | parser + lawyer (no LLM!) + narrator |
-| `skill_check`       | ≈ $0.08          | parser + lawyer DC-set + narrator    |
-| `inventory` (parsed)| ≈ $0.02          | parser only, narrator skipped        |
-| `/inv` slash command| **$0.00**        | CLI direct, no LLM                   |
+Полный JSON-отчёт ложится в `traces/<session_id>_bench.json` со всеми
+вопросами, истинами, ответами и оценками.
 
 ---
 
-## Project layout
+## Стоимость
+
+По правилу #6 агенты делятся на два тира моделей:
+
+| Агент          | Модель                | Зачем                       |
+|----------------|------------------------|-----------------------------|
+| Narrator       | `claude-opus-4-7`     | Голос и качество прозы      |
+| NPC Actor      | `claude-opus-4-7`     | Голос персонажа важен       |
+| NPC Director   | `claude-haiku-4-5`    | Дешёвый роутинг             |
+| Rules Lawyer   | `claude-haiku-4-5`    | Дешёвый выбор DC            |
+| Orchestrator   | `claude-haiku-4-5`    | Дешёвый разбор интентов     |
+
+Имена — это лейблы шлюза: `gngn.my` отдаёт Minimax под брендингом Claude.
+Стоимость считается на лету в `MinimaxClient.estimate_cost_usd` и
+показывается как поход на ход (в подвале CLI), так и общая (в отчёте бенча).
+
+Наблюдаемые стоимости из бенч-прогона выше (цены Anthropic как верхняя
+граница; реальный шлюз скорее всего дешевле):
+
+| Интент / агент       | Типичная цена за ход | Что считается                            |
+|----------------------|----------------------|------------------------------------------|
+| `look`               | ≈ $0.06              | парсер (haiku) + narrator (opus)         |
+| `move`               | ≈ $0.06–0.09         | парсер + narrator                        |
+| `talk` (с NPC)       | ≈ $0.12–0.13         | парсер + actor (opus) + narrator         |
+| `attack`             | ≈ $0.10              | парсер + lawyer (без LLM!) + narrator    |
+| `skill_check`        | ≈ $0.08              | парсер + lawyer DC-set + narrator        |
+| `inventory` (распарс)| ≈ $0.02              | только парсер, narrator пропускается     |
+| `/inv` (слеш)        | **$0.00**            | напрямую из CLI, без LLM                 |
+
+---
+
+## Структура проекта
 
 ```
 src/taleforge/
-├── config.py               # frozen Settings, dotenv-backed
+├── config.py               # frozen Settings, dotenv
 ├── models.py               # WorldState, Entity, NPC, Location, Quest, Action, Outcome
 ├── llm/
-│   ├── minimax.py          # the ONE async client (retry, cost, reasoning)
-│   └── prompts.py          # system prompts (one per agent)
+│   ├── minimax.py          # ЕДИНСТВЕННЫЙ async-клиент (retry, cost, reasoning)
+│   └── prompts.py          # системные промпты (по одному на агента)
 ├── state/
-│   ├── store.py            # WorldStateKeeper (sole writer) + scenario loader + SQLite saves
-│   └── tools.py            # 12 mutation specs with validate + apply
+│   ├── store.py            # WorldStateKeeper (единственный писатель) + загрузка YAML + SQLite-сейвы
+│   └── tools.py            # 12 описаний мутаций с validate + apply
 ├── scenarios/
-│   └── starter_village.yaml  # Brackenhollow: 6 locations, 4 NPCs, 1 quest
+│   └── starter_village.yaml  # Brackenhollow: 6 локаций, 4 NPC, 1 квест
 ├── agents/
 │   ├── base.py             # BaseAgent ABC
-│   ├── orchestrator.py     # routes player input → call sequence
-│   ├── rules_lawyer.py     # local seeded dice + LLM only for fuzzy DCs
-│   ├── narrator.py         # prose only; strict no-leak input filter
-│   ├── npc_director.py     # routes to per-NPC sub-agents (no character-play)
-│   └── npc_actor.py        # ONE NPC, own prompt + own history
-├── bench/consistency.py    # 30-turn script + 10 fact questions + scoring
-├── cli.py                  # typer entrypoint: new / play / load / bench
+│   ├── orchestrator.py     # роутер player input → последовательность вызовов
+│   ├── rules_lawyer.py     # локальные кости с seed + LLM только для фуззи DC
+│   ├── narrator.py         # только проза; строгий фильтр на утечки
+│   ├── npc_director.py     # роутит на агентов-исполнителей (без актёрской игры)
+│   └── npc_actor.py        # ОДИН NPC, свой промпт + своя история
+├── bench/consistency.py    # 30-ходовый скрипт + 10 фактов + scoring
+├── cli.py                  # typer-entrypoint: new / play / load / bench
 └── web/
     ├── server.py           # FastAPI: sessions, scene, turn, undo, world-map, npcs, portraits
-    └── schemas.py          # DTOs (filtered: NO secrets / goals / raw memory leak through)
+    └── schemas.py          # DTO (отфильтрованы: НИКАКИХ секретов / целей / памяти не утекает)
 
 frontend/                   # React 18 + Vite 4 + Tailwind 3 + framer-motion
 ├── src/
-│   ├── App.tsx             # 3-pane layout (map / prose / npcs+inventory)
-│   ├── api.ts              # fetch wrappers for /api/*
-│   ├── types.ts            # mirrors web/schemas.py
+│   ├── App.tsx             # 3-панельный layout (карта / проза / NPC + инвентарь)
+│   ├── api.ts              # обёртки fetch для /api/*
+│   ├── types.ts            # отражают web/schemas.py
+│   ├── i18n/               # словари en + ru, Context + хук useT, localStorage
 │   └── components/
-│       ├── Header.tsx          # turn / day / cost / undo / save
-│       ├── ProseFeed.tsx       # scrolling narrator history with framer transitions
-│       ├── ActionInput.tsx     # input box + suggestion chips
-│       ├── WorldMap.tsx        # SVG graph; current location pulses with ember glow
-│       ├── NpcPanel.tsx        # cards: portrait / hp / disposition bar / "here" badge
-│       ├── InventoryPanel.tsx  # HP bar, gp pips, item list
-│       ├── DiceFooter.tsx      # collapsible rolls of last turn
-│       └── CombatOverlay.tsx   # animated modal on attack: d20 → AC → −damage
+│       ├── Header.tsx          # ход / день / стоимость / undo / save / язык
+│       ├── ProseFeed.tsx       # скроллящаяся история с framer-анимациями
+│       ├── ActionInput.tsx     # input + чипы-подсказки
+│       ├── WorldMap.tsx        # SVG-граф; текущая локация пульсирует огоньком
+│       ├── NpcPanel.tsx        # карточки: портрет + HP + полоса disposition + бейдж "тут"
+│       ├── InventoryPanel.tsx  # HP-бар, точки золотых, список вещей
+│       ├── DiceFooter.tsx      # сворачиваемые броски последнего хода
+│       └── CombatOverlay.tsx   # анимированная модалка боя: d20 → AC → −урон
 ```
 
-Hard rules (enforced in code, not norms):
-- every agent file ≤ 250 lines
-- all HTTP to the gateway through ONE client (`llm/minimax.py`)
-- every state mutation logged to JSONL trace
-- `.env.example` committed; `.env` and `traces/` in `.gitignore`
+Жёсткие правила (проверяются кодом, а не на словах):
+- каждый файл агента ≤ 250 строк
+- весь HTTP к шлюзу через ОДИН клиент (`llm/minimax.py`)
+- каждая мутация state логируется в JSONL trace
+- `.env.example` коммитится; `.env` и `traces/` в `.gitignore`
 
 ---
 
-## Why no LangGraph
+## Почему не LangGraph
 
-Because explicit beats clever:
+Потому что явный код побеждает «умный»:
 
-|                          | TaleForge          | Typical LangGraph build         |
-|--------------------------|--------------------|---------------------------------|
-| Orchestrator code        | ~245 lines         | usually 2,000+                  |
-| Routing definition       | one `if/elif`      | typed graph with edge functions |
-| State writes             | one class, validated | scattered through node fns    |
-| Add a new intent         | 3 lines            | new node + edge + state schema  |
-| Read it cold             | one afternoon      | depends on the framework version|
+|                          | TaleForge          | Обычный билд на LangGraph     |
+|--------------------------|--------------------|--------------------------------|
+| Код оркестратора         | ~245 строк         | как правило 2 000+             |
+| Описание роутинга        | один `if/elif`     | граф с типизированными edge-функциями |
+| Запись state             | один класс, валидирует | размазана по функциям-нодам   |
+| Добавить новый интент    | 3 строки           | новая нода + edge + state-схема |
+| Прочитать с нуля         | один день          | смотря какая версия фреймворка |
 
-LangGraph is great when you need a runtime graph the model can rewrite. We
-don't — the call graph for "player typed something" is fixed. Wiring it
-through a framework would have added a thousand lines of indirection for
-zero functional gain.
+LangGraph хорош, когда нужен runtime-граф, который сама модель может
+переписывать. Нам не нужен — граф вызовов для «игрок что-то написал»
+зафиксирован. Пускать его через фреймворк значило бы тысячу строк
+дополнительной indirection без функционального выигрыша.
 
-The whole orchestrator is one file you can read in five minutes:
+Весь оркестратор — это один файл, который читается за пять минут:
 [`src/taleforge/agents/orchestrator.py`](src/taleforge/agents/orchestrator.py).
 
 ---
 
-## Internationalisation
+## Локализация
 
-The web UI is bilingual out of the box (English + Russian) with the
-language switcher in the header. The choice is persisted in
-`localStorage` and detected from `navigator.language` on first visit.
+Веб-интерфейс мультиязычный из коробки (английский + русский), переключатель
+языка — в шапке. Выбор сохраняется в `localStorage`, при первом визите
+определяется из `navigator.language`.
 
-Backend support: `POST /api/sessions` accepts a `language: "en" | "ru"`
-field; `POST /api/sessions/{sid}/turn` can override it per-turn. The
-language flows through `Orchestrator.take_turn` → `Narrator.narrate` and
-`NPCActor.speak`, where a one-line hint is appended to the system prompt
-asking the model to write its output in the chosen language.
+Поддержка на бэке: `POST /api/sessions` принимает поле `language: "en" | "ru"`;
+`POST /api/sessions/{sid}/turn` может override его на одиночный ход. Язык
+протекает через `Orchestrator.take_turn` → `Narrator.narrate` и `NPCActor.speak`,
+где к системному промпту приклеивается строка, просящая модель писать на
+выбранном языке.
 
-The scenario YAML stays in English (proper nouns like Brackenhollow,
-Maren, "The Boar & Barrel" — translation would be lossy). The Narrator
-transliterates them on the fly (`Брекенхоллоу`, `Тибор Бард`, etc.).
+YAML-сценарий остаётся английским (имена собственные типа Brackenhollow,
+Maren, "The Boar & Barrel" — переводить было бы потерями). Рассказчик
+транслитерирует их на лету (`Брекенхоллоу`, `Тибор Бард`, и т.д.).
 
-Verified end-to-end against `claude-opus-4-7` via gngn.my: `look around`
-in Russian → 280-character atmospheric paragraph in Russian, $0.13 / turn
-(slightly more than English because the model reasons more on RU output).
+Проверено end-to-end на `claude-opus-4-7` через gngn.my: `осмотрись вокруг` →
+атмосферный абзац на 280 символов на русском, $0.13 за ход (чуть дороже
+английского, потому что модель больше думает на русском выводе).
 
-Adding a new language is one file — drop strings into
-`frontend/src/i18n/strings.ts` (each key has an `{en, ru, …}` object) and
-`_LANG_NAMES` in `src/taleforge/llm/prompts.py`.
+Добавить ещё язык — один файл: положить строки в
+`frontend/src/i18n/strings.ts` (у каждого ключа объект `{en, ru, …}`) и
+дописать в `_LANG_NAMES` в `src/taleforge/llm/prompts.py`.
 
 ---
 
-## Web frontend — invariants
+## Web-фронтенд — инварианты
 
-The web layer carries the same no-leak rules as the Narrator. Three
-backend tests pin them:
+Web-слой несёт те же правила утечек, что и Рассказчик. Три бэкенд-теста их
+закрепляют:
 
-- `NpcCardDTO` exposes `disposition_norm` (a -1..1 float for bar rendering)
-  and `disposition_label` ("friendly" / "wary"), but **never** the raw integer,
-  goals, secrets, or memory contents.
-- `SceneDTO.entities` only includes co-located entities and only their
-  `id / name / kind / alive / hp_label` (HP is bucketed; the integer is hidden).
-- `test_npc_cards_filter_secrets_and_goals` scans the JSON payload for the
-  same nine secret literals the Narrator tests check.
+- `NpcCardDTO` отдаёт `disposition_norm` (float -1..1 для отрисовки полосы)
+  и `disposition_label` («friendly» / «wary»), но **никогда** — сырое
+  число, цели, секреты или содержимое памяти.
+- `SceneDTO.entities` включает только сущности в одной локации с игроком,
+  и только их поля `id / name / kind / alive / hp_label` (HP в виде слова,
+  целое число спрятано).
+- `test_npc_cards_filter_secrets_and_goals` сканирует JSON-payload на те же
+  девять секретных литералов, что и тесты Рассказчика.
 
-The portrait endpoint returns hash-coloured SVG initials with no LLM call
-(`/api/portraits/<npc_id>.svg`). Real SDXL generation is on the roadmap.
+Endpoint портретов возвращает SVG-инициалы с цветом, посчитанным по хэшу,
+без LLM-вызовов (`/api/portraits/<npc_id>.svg`). Реальная генерация через
+SDXL — в roadmap.
 
 ---
 
 ## Roadmap
 
-- **Combat richer than 5e-lite** — armor classes from gear tables, multiple
-  attacks, conditions (poisoned, prone, frightened), resistances
-- **Party of multiple PCs** — the player controls a party; turn order matters;
-  each PC has its own inventory and HP
-- **NPCDirector(react) and (scene_entry) hooks** — currently stubbed; would
-  let nearby NPCs react to combat / greet the player on entry
-- **Real NPC portraits via SDXL / Flux** — `/api/portraits` already isolates
-  the call; swap the placeholder for an on-demand generator
-- **Long-term memory compression** — NPC `memory` lists are unbounded today;
-  add a periodic LLM-summarisation pass for sessions ≥ 100 turns
-- **Streaming prose** — both CLI and web should show the narrator's response
-  as it generates instead of waiting for the full block (SSE on `/api/turn`)
-- **Multiplayer** — multiple players in one session, each acting on their turn,
-  via WebSocket fan-out
-- **More scenarios** — Brackenhollow is a tutorial; want a city heist, a
-  dungeon crawl, and a courtly intrigue
+- **Боёвка богаче 5e-lite** — armor class из таблицы экипировки, несколько
+  атак за ход, состояния (отравлен, повержен, испуган), резисты
+- **Партия из нескольких PC** — игрок управляет группой, важен порядок
+  ходов, у каждого PC свой инвентарь и HP
+- **Хуки `NPCDirector(react)` и `(scene_entry)`** — сейчас застаблены;
+  дадут реакцию ближних NPC на бой / приветствие при входе в комнату
+- **Настоящие портреты NPC через SDXL / Flux** — endpoint `/api/portraits`
+  уже изолирует вызов; останется только подменить placeholder реальной
+  генерацией on-demand
+- **Сжатие долгой памяти** — `memory` у NPC сейчас неограниченный; добавить
+  периодический LLM-проход с суммаризацией для сессий ≥100 ходов
+- **Streaming прозы** — и в CLI, и в вебе показывать ответ Рассказчика по
+  мере генерации, а не блоком (SSE на `/api/turn`)
+- **Multiplayer** — несколько игроков в одной сессии, ходят по очереди,
+  через WebSocket-fanout
+- **Больше сценариев** — Brackenhollow это туториал; нужны городская
+  интрига, классический подземельный кравл и придворная интрига
 
 ---
 
-## Credits
+## Благодарности
 
-Built as a deliberate exercise in *not* reaching for a framework. The four
-agents architecture is folklore; the no-LangGraph stance is opinionated; the
-per-NPC-one-head invariant is non-negotiable.
+Сделано как умышленное упражнение в *не*-хватании за фреймворк. Архитектура
+из четырёх агентов — фолклор; позиция «без LangGraph» — мнение автора;
+инвариант «одна голова на персонажа» — не обсуждается.
 
-License: MIT.
+Лицензия: MIT.
